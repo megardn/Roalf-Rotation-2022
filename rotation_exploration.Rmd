@@ -1,0 +1,49 @@
+---
+title: "rotation_exploration"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+load packages
+
+```{r Install/Load packages, echo=FALSE, message=FALSE, warning=FALSE}
+if(!require('pacman')) {
+  install.packages('pacman')
+}
+pacman::p_load(tidyverse)
+```
+
+## Clinical Data
+
+Matching to see how many 7T glucest participants are part of PNC
+
+Load glucest subject list extracted from .xls (list from David 1/13/22)
+
+```{r load glucest}
+glucest <- read.csv("7t_dates.csv", header=T) 
+names(glucest)
+str(glucest)
+count(glucest)
+```
+
+Loading PNC subject list
+
+``` {r load pnc}
+pnc <- read.csv("/Users/megardn/ImageData/PMACS_remote/demographics/n1601_demographics_go1_20161212.csv", header=T)
+names(pnc)
+str(pnc)
+```
+
+join dataframes
+```{r join, echo=FALSE}
+merge <- inner_join(glucest, pnc,
+  by = c("BBLID"="bblid"),
+  copy = FALSE,
+  keep = FALSE,
+  na_matches= "never")
+n_distinct(merge$BBLID) #count unique ppts
+```
+
