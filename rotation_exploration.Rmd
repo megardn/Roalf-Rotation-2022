@@ -69,10 +69,23 @@ names(redcap)
 redcap <- subset(redcap, HSTATUS != "22q" | is.na(HSTATUS))
 ```
 
+### Diagnoses
+
+Initialize a dataframe to store counts as we go
+``` {r}
+dx_sum <- data.frame(Variable=character(),
+                     Frequency=integer(),
+                     Note=character(),
+                     stringsAsFactors=F)
+```
+
 find subjects with multiple CAPA diagnoses
 
 ``` {r}
 length(which(redcap$timepoint==2))
+
+#append to summary df
+dx_sum[nrow(dx_sum) + 1,] = c("CAPA", length(which(redcap$timepoint==2)), "subjects with 2+ diagnoses in REDCap (CAPA)")
 ```
 
 76 subjects have 2 or more dx only including CAPA data
@@ -81,15 +94,16 @@ combine dataframes
 ```{r}
 #make each df have the same number/names of columns
 empty_cols <- c("X7T_date", "ONM_7T_date", "scanid", "goassessDxpmr4", "goassessDxpmSep15", "goassessDxpmr6", "goassessDxpmr7") 
-redcap[ , empty_cols] <- NA
+redcap2 <- redcap #copy dataframe before adding empty columns
+redcap2 <- redcap2[ , empty_cols] <- NA
 empty_cols2 <- c("DODIAGNOSIS", "HSTATUS", "AXIS1_DX1", "allaxis1desc", "GASR_CURRENT", "AGEONSET_AXIS1", "AGEONSET_CLINICRISK", "dx_pscat")
 merge[ , empty_cols2]<- NA
 merge[ , "timepoint"] <- 0 #no dates for PNC dx, setting timepoint to 0
 
-names(redcap)
+names(redcap2)
 names(merge)
 
-total <- rbind(redcap, merge)
+total <- rbind(redcap2, merge)
 total
 ```
 
@@ -103,6 +117,9 @@ uniq <- uniq %>% rename(BBLID=Var1) #rename variable
 
 sum(is.na(uniq$BBLID))
 nrow(uniq) #number of unique subjects from 7T dataset with diagnoses in PNC and/or redcap
+
+#append to summary df
+dx_sum[nrow(dx_sum) + 1,] = c("unique_dx", nrow(uniq), "number unique subjects with diagnoses in PNC Goassess and/or REDCap CAPA")
 ```
 
 108 unique subjects with diagnoses (PNC and/or redcap)
@@ -111,14 +128,14 @@ nrow(uniq) #number of unique subjects from 7T dataset with diagnoses in PNC and/
 follow <- filter(uniq, Freq > 1)
 summary(follow)
 nrow(follow)
+
+#append to summary df
+dx_sum[nrow(dx_sum) + 1,] = c("multi_dx", nrow(follow), "number unique subjects with 2+ diagnoses in PNC Goassess and/or REDCap CAPA")
 ```
 
 84 subjects with 7T scans have 2 or more diagnoses between PNC or RedCap
 
-
-## To Do:
-see how many subjects' diagnoses changed over time
-
+Find initial diagnoses of 
 ``` {r}
 #sort diagnoses by order of interview and filter down to earliest dx only
 first <- total[order(total$timepoint),] %>% group_by(BBLID) %>% distinct(BBLID, .keep_all=TRUE) %>% select(BBLID, HSTATUS, allaxis1desc, dx_pscat, goassessDxpmr4) %>% mutate(HSTATUS = as.factor(HSTATUS), dx_pscat = as.factor(dx_pscat), goassessDxpmr4 = as.factor(goassessDxpmr4))
@@ -142,3 +159,37 @@ dx_freqtotal$dx <- fct_collapse(dx_freqtotal$dx, "healthy" = c("noDSMdx", "1TD")
 dx_freqtotal <- dx_freqtotal %>% group_by(dx) %>% summarize(Freq=sum(Freq))
 dx_freqtotal
 ```
+
+### GAF
+
+first looking at GASR data included in diagnosis_long.csv
+
+``` {r}
+#drop missing gasr
+gasr <- redcap %>% drop_na(GASR_CURRENT)
+
+#list subj with >=2 gasr scores
+multi_gasr <- gasr %>% subset(timepoint==2) %>% select(BBLID)
+#merge to filter to only subj with multiple gasr
+gasr_long <- inner_join(gasr, multi_gasr, by = c("BBLID"))
+
+#filter to first and last gasr scores for each subject
+gasr_long <- gasr_long[order(gasr_long$timepoint),] %>% group_by(BBLID) %>% slice(c(1,n()))
+
+#calculate change in GASR, save and plot
+gasr_change <- gasr_long %>% group_by(BBLID) %>% mutate("gaf_diff"= GASR_CURRENT - lag(GASR_CURRENT), BBLID=as.factor(BBLID)) %>% select(BBLID, gaf_diff) %>% na.omit 
+summary(gasr_change$gaf_diff)
+
+#append calculation of gasr to summary df
+dx_sum[nrow(dx_sum) + 1,] = c("multi_gasr", nrow(gasr_change), "number unique subjects with 2+ GASR values from REDCap diagnosis.csv")
+
+#plot change in gasr
+ggplot(gasr_change, aes(x=gaf_diff)) + 
+  geom_histogram(bins=25, color="white", fill= "darkgreen") + 
+  labs(title="change in GASR")
+```
+
+
+## To Do:
+see how many subjects' diagnoses changed over time
+change in GAF over time
