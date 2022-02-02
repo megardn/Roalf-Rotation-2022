@@ -1,7 +1,10 @@
 ---
-title: "rotation_exploration"
+title: "Rotation Data Exploration"
 output: html_document
 ---
+
+Compiling/exploring clinical data avaiable from subjects with 7T data to narrow down rotation project ideas.
+NOTE: Code relies on files saved in directory `/data` not tracked in git
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -73,7 +76,7 @@ redcap <- subset(redcap, HSTATUS != "22q" | is.na(HSTATUS))
 
 Initialize a dataframe to store counts as we go
 ``` {r}
-dx_sum <- data.frame(Variable=character(),
+df_sum <- data.frame(Variable=character(),
                      Frequency=integer(),
                      Note=character(),
                      stringsAsFactors=F)
@@ -85,7 +88,7 @@ find subjects with multiple CAPA diagnoses
 length(which(redcap$timepoint==2))
 
 #append to summary df
-dx_sum[nrow(dx_sum) + 1,] = c("CAPA", length(which(redcap$timepoint==2)), "subjects with 2+ diagnoses in REDCap (CAPA)")
+df_sum[nrow(df_sum) + 1,] = c("CAPA", length(which(redcap$timepoint==2)), "subjects with 2+ diagnoses in REDCap (CAPA)")
 ```
 
 76 subjects have 2 or more dx only including CAPA data
@@ -95,7 +98,7 @@ combine dataframes
 #make each df have the same number/names of columns
 empty_cols <- c("X7T_date", "ONM_7T_date", "scanid", "goassessDxpmr4", "goassessDxpmSep15", "goassessDxpmr6", "goassessDxpmr7") 
 redcap2 <- redcap #copy dataframe before adding empty columns
-redcap2 <- redcap2[ , empty_cols] <- NA
+redcap2[ , empty_cols] <- NA
 empty_cols2 <- c("DODIAGNOSIS", "HSTATUS", "AXIS1_DX1", "allaxis1desc", "GASR_CURRENT", "AGEONSET_AXIS1", "AGEONSET_CLINICRISK", "dx_pscat")
 merge[ , empty_cols2]<- NA
 merge[ , "timepoint"] <- 0 #no dates for PNC dx, setting timepoint to 0
@@ -119,7 +122,7 @@ sum(is.na(uniq$BBLID))
 nrow(uniq) #number of unique subjects from 7T dataset with diagnoses in PNC and/or redcap
 
 #append to summary df
-dx_sum[nrow(dx_sum) + 1,] = c("unique_dx", nrow(uniq), "number unique subjects with diagnoses in PNC Goassess and/or REDCap CAPA")
+df_sum[nrow(df_sum) + 1,] = c("unique_dx", nrow(uniq), "number unique subjects with diagnoses in PNC Goassess and/or REDCap CAPA")
 ```
 
 108 unique subjects with diagnoses (PNC and/or redcap)
@@ -130,7 +133,7 @@ summary(follow)
 nrow(follow)
 
 #append to summary df
-dx_sum[nrow(dx_sum) + 1,] = c("multi_dx", nrow(follow), "number unique subjects with 2+ diagnoses in PNC Goassess and/or REDCap CAPA")
+df_sum[nrow(df_sum) + 1,] = c("multi_dx", nrow(follow), "number unique subjects with 2+ diagnoses in PNC Goassess and/or REDCap CAPA")
 ```
 
 84 subjects with 7T scans have 2 or more diagnoses between PNC or RedCap
@@ -181,7 +184,7 @@ gasr_change <- gasr_long %>% group_by(BBLID) %>% mutate("gaf_diff"= GASR_CURRENT
 summary(gasr_change$gaf_diff)
 
 #append calculation of gasr to summary df
-dx_sum[nrow(dx_sum) + 1,] = c("multi_gasr", nrow(gasr_change), "number unique subjects with 2+ GASR values from REDCap diagnosis.csv")
+df_sum[nrow(df_sum) + 1,] = c("multi_gasr", nrow(gasr_change), "number unique subjects with 2+ GASR values from REDCap diagnosis.csv")
 
 #plot change in gasr
 ggplot(gasr_change, aes(x=gaf_diff)) + 
@@ -189,7 +192,14 @@ ggplot(gasr_change, aes(x=gaf_diff)) +
   labs(title="change in GASR")
 ```
 
+## Outputs
+save summary document
+``` {r summary.output}
+write.csv(df_sum, file = "7T_ppt_clinical_summary.csv")
+print(df_sum)
+```
 
 ## To Do:
 see how many subjects' diagnoses changed over time
-change in GAF over time
+change in other GAF scores over time
+
