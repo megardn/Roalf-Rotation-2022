@@ -2,4 +2,6 @@
 "1","CAPA","76","subjects with 2+ diagnoses in REDCap (CAPA)"
 "2","unique_dx","108","number unique subjects with diagnoses in PNC Goassess and/or REDCap CAPA"
 "3","multi_dx","84","number unique subjects with 2+ diagnoses in PNC Goassess and/or REDCap CAPA"
-"4","multi_gasr","67","number unique subjects with 2+ GASR values from REDCap diagnosis.csv"
+"4","1yr_dx","25","number unique subjects with 2+ diagnoses in PNC Goassess and/or CAPA who have a dx >= 365 days post-7T"
+"5","multi_gasr","67","number unique subjects with 2+ GASR values from REDCap diagnosis.csv"
+"6","multi_gafc","67","number unique subjects with 2+ GAF Current values from SIPS"
