@@ -177,11 +177,10 @@ length(unique(dx_multi$BBLID)) #confirm filtered correctly
 #reorganize diagnoses to best compare across goassess and CAPA
 dx_multi <- dx_multi %>% unite(DIAGNOSIS, c (dx_pscat, goassessDxpmr6), na.rm = TRUE, remove=FALSE) %>% 
   mutate(DIAGNOSIS = as.factor(DIAGNOSIS),
-         DIAGNOSIS = fct_collapse(DIAGNOSIS, "healthy" = c("noDSMdx", "TD"),
-                                "other_dx" = c("OP", "other"),
-                                "GO_PS" = c("PS"),
-                                "CAP_pro" = c("pro"),
-                                "CAP_psych" = c("psy")))
+         DIAGNOSIS = fct_collapse(DIAGNOSIS, "TD" = c("noDSMdx", "TD"),
+                                "other" = c("OP", "other"),
+                                "GO.PS" = c("PS"),
+                                "CAP.pro" = c("pro", "psy")))
 levels(dx_multi$DIAGNOSIS)
 
 #get 7T dates Kosha used and set formats
@@ -233,6 +232,7 @@ clin365 <- subset(dx_multi_first7t, diff_in_days >= 365, select = BBLID) %>% uni
 post_first7t <- subset(dx_multi_first7t, (BBLID %in% clin365$BBLID & BBLID %in% clin364$BBLID))
 
 length(unique(post_first7t$BBLID))
+levels(post_first7t$DIAGNOSIS)
 
 #append to summary df
 df_sum[nrow(df_sum) + 1,] = c("1yr_dx_earliest7t", nrow(clin365), "number unique subjects with 2+ diagnoses in PNC Goassess and/or CAPA who have a baseline dx (up to 364 d) and follow-up dx (>= 365 d) after their earliest 7T")
@@ -241,7 +241,6 @@ df_sum[nrow(df_sum) + 1,] = c("1yr_dx_earliest7t", nrow(clin365), "number unique
 32 subjects have clinical data after their earliest 7T!
 
 plot a timeline of each subject's clinical diagnoses in relation to scan date
-**to do:** update dx categories to include pnc dx for colors, drop subj w/out at least 1 yr clinical follow up
 
 ```{r}
 ggplot(post_first7t, aes(x=diff_in_days, y=BBLID, color=DIAGNOSIS)) + 
@@ -249,9 +248,29 @@ ggplot(post_first7t, aes(x=diff_in_days, y=BBLID, color=DIAGNOSIS)) +
   geom_vline(xintercept=365) +
   labs(title="Diagnosis Relative to First 7T Scan", x="Days from 7T Scan")
 ```
+see diagnostic trajectory across time -> binned
+``` {r fig.height=7}
+#make sure timepoints are factors in an order that makes sense
+levels(post_first7t$timepoint)
+post_first7t$timepoint<- ordered(post_first7t$timepoint, levels=c("0", "1", "2", "3", "4", "5", "6", "7", "8"))
+
+dx_7t_wide <- post_first7t %>% select(BBLID,DIAGNOSIS, timepoint, first_7t_date) %>%
+  arrange(timepoint) %>% 
+  pivot_wider(names_from=timepoint, names_prefix = "timepoint_", values_from=DIAGNOSIS) %>%
+  unite(trajectory, c(3:10), na.rm = TRUE, remove=FALSE) %>% 
+  mutate(trajectory = as.factor(trajectory))
+
+#plot
+ggplot(dx_7t_wide) + 
+  geom_bar(aes(x=trajectory), stat="count") + 
+  theme(axis.text.x = element_text(angle = 90)) + 
+  ggtitle("frequency of categorical trajectories")
+```
+
 find change in dx across time - this includes changes before 7t and after 7t - want to see just changes where the 7t happened in the middle
 
 ``` {r}
+
 #finding ppt where dx changed between timepoints
 dx_changes <- post_first7t %>%
   group_by(BBLID) %>%
@@ -274,6 +293,20 @@ subset(first_last, dx_change == "TRUE", select = BBLID) %>% nrow()
 #same count - is it a problem if change dx occured prior to scan???
 ```
 
+get frequency of each initial dx
+
+```{r}
+first_only <- first_last %>% group_by(BBLID) %>% 
+  arrange(DODIAGNOSIS) %>% 
+  slice(c(1))
+
+last_only <- first_last %>% group_by(BBLID) %>% 
+  arrange(DODIAGNOSIS) %>% 
+  slice(c(-1))
+
+table(first_only$DIAGNOSIS) 
+table(last_only$DIAGNOSIS) 
+```
 ### GAF
 
 first looking at GASR data included in diagnosis_long.csv
@@ -351,4 +384,6 @@ clean up dx_multi, get rid of attempt with kosha's 7T dates
 see SIPS timepoints with 7T
 look at PRIME
 
+plot all dx across time in categories
+plot change in dx across most proximal scans
 
