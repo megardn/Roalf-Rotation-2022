@@ -1,0 +1,277 @@
+---
+title: "roalf_longitudinal"
+output: html_document
+---
+
+A cleaner/more streamlined version of `rotation_exploration.Rmd` for assessing changes in clinical scores pre-post 7T glucest.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+load packages
+
+```{r Install/Load packages, echo=FALSE, message=FALSE, warning=FALSE}
+if(!require('pacman')) {
+  install.packages('pacman')
+}
+pacman::p_load(tidyverse, ggplot2)
+```
+
+## 7T dates
+
+Find the first 7T each participant is done to maximize length of potential follow-ups. Using glucest subject list extracted from .xls (list from David 1/13/22).
+
+Note: doesn't include scans past June 2019. Will need to update but probalby won't add many subj. with 1 yr post-7T clinical timepoints
+
+``` {r load.7t}
+#start with complete glucest date list - clean up and compare X7T_date and ONM_7T_date
+glucest <- read.csv("data/7t_dates.csv", header=T)
+str(glucest)
+#replace blank values with na, get rid of extra characters in X7T_date
+first7t <- glucest %>% mutate_all(na_if,"") %>%
+  mutate(X7T_date = gsub(",.*","", X7T_date), 
+         X7T_date = as.Date(X7T_date,format ="%m/%d/%y"),
+         ONM_7T_date = as.Date(ONM_7T_date,format ="%m/%d/%y"))
+str(first7t)
+
+#create new column with only first scan dates
+first7t <- first7t %>% mutate(first_7t_date = pmin(X7T_date, ONM_7T_date, na.rm=TRUE)) %>% select(BBLID, first_7t_date)
+```
+
+## Load All Data
+
+```{r load.clinical}
+#load PNC data
+goassess <- read.csv("/Users/megardn/ImageData/PMACS_remote/clinical/goassess_diagnosis.csv", header=T) %>%
+  mutate(go_dx = as.factor(goassessDxpmr6),
+        dx_source = "goassess",
+        date = as.Date("2000-01-01")) %>% #no date available for PNC dx, arbitrarily picking Jan 1 2000
+        select (bblid, go_dx, dx_source, date)
+
+### HOW TO ID 22Q PPTS FROM PNC FOR REMOVAL?!?!
+
+#load RedCap diagnosis data
+redcap <- read.csv("data/diagnosis_long.csv", header = TRUE, stringsAsFactors = F, na = "") %>% 
+  select(BBLID, DODIAGNOSIS, HSTATUS, AXIS1_DX1, allaxis1desc, GASR_CURRENT, AGEONSET_AXIS1, AGEONSET_CLINICRISK, dx_pscat, timepoint, FROM_CAPA, FROM_DIGS, FROM_SCID, FROM_FIGS, FROM_RECORDS, FROM_MINI, FROM_SIPS) %>% #get manageable subset of data
+  mutate(DODIAGNOSIS = as.Date(DODIAGNOSIS))
+
+#load SIPS
+sips <- read.csv("data/sips_long.csv", header = TRUE, stringsAsFactors = F, na = "") %>%
+  mutate(DOSIPS = as.Date(DOSIPS)) %>%
+  select(bblid, DOSIPS, GAF_C, GAF_H, SPD, FHPI, POS_345, POS_6, NEG_3456, DIS_3456, GEN_3456, PRODROMAL) #filter down to summary scores
+
+#load PRIME
+prime <- read.csv("data/prime_long.csv", header = TRUE, stringsAsFactors = F, na = "") %>%
+  mutate(date = as.Date(date))
+
+#load CGAS
+cgas <- read.csv("data/c-gas.csv", header = TRUE, stringsAsFactors = F, na = "") %>%
+  mutate(date = as.Date(date, format = "%m/%d/%y %H:%M"))
+
+#load SYRPs
+syrp_roalf <- read.csv("data/7TSharedScalesCollec-Roalf7TProjects_DATA_2022-02-11_1858.csv", header = TRUE, stringsAsFactors = F, na = "")
+syrp_sat <- read.csv("data/7TSharedScalesCollec-Satterthwaite7T_DATA_2022-02-11_1858.csv", header = TRUE, stringsAsFactors = F, na = "")
+syrp <- rbind(syrp_roalf, syrp_sat) %>% 
+  mutate(date = as.Date(date))
+duplicated(syrp) #no duplicates across Roalf and Satterthwiate csvs
+```
+
+``` {r}
+#make list of 22q subj
+q22 <- subset(redcap, HSTATUS == "22q", select = BBLID) %>% unique()
+```
+
+## SIPS
+
+``` {r sips}
+#7t and sips
+sips_scan <- inner_join(sips, first7t, by = c("bblid" = "BBLID")) %>%
+  mutate(bblid = as.factor(bblid)) %>%
+  subset(!(bblid %in% q22$BBLID)) #drop 22q sub
+#calc diff (negative values -> dx before 7t)
+sips_scan$diff_in_days = as.numeric(difftime(sips_scan$DOSIPS, sips_scan$first_7t_date, units = "days"))
+# drop data more than 1 yr prior to scan
+sips_scan <- subset(sips_scan, diff_in_days >= -365)
+summary(sips_scan$diff_in_days)
+
+#find subjects that have a baseline sips up to 364 days post-7T
+clin364 <-  sips_scan %>% na.omit(POS_345, NEG_3456, GEN_3456) %>% subset(diff_in_days <= 364, select = bblid) %>% unique()
+#find subjects that have a followup sips >365 days post-7T
+clin365 <- sips_scan %>% na.omit(POS_345, NEG_3456, GEN_3456) %>% subset(diff_in_days >= 365, select = bblid) %>% unique()
+#filter df
+sips_scan <- subset(sips_scan, (bblid %in% clin365$bblid & bblid %in% clin364$bblid))
+
+#plot for fun
+ggplot(sips_scan, aes(x=diff_in_days, y=bblid, color=bblid)) + 
+  geom_point() +
+  geom_vline(xintercept=365) +
+  labs(title="SIPS Relative to First 7T Scan", x="Days from 7T Scan") +
+  theme(legend.position = "none")
+
+length(unique(sips_scan$bblid))
+```
+There are ` r length(unique(sips_scan$bblid))` (11) subjects with SIPS at baseline and at least 1 post-1 yr followup
+
+*confirm correct summary scores pulled*
+
+``` {r sips.change}
+names(sips_scan)
+#calculate change in SIPS scores, save and plot
+sips_change <- sips_scan %>% 
+  group_by(bblid) %>% 
+  mutate("pos_diff"= POS_345 - lag(POS_345),
+         "neg_diff"= NEG_3456 - lag(NEG_3456),
+         "gen_diff"= GEN_3456 -lag(GEN_3456))
+
+summary(sips_change)
+
+#plot longitudinal scores
+ggplot(sips_change, aes(x=diff_in_days, y=POS_345, color=bblid)) +
+  geom_line() +
+  labs(title="SIPS Pos")
+
+ggplot(sips_change, aes(x=diff_in_days, y=NEG_3456, color=bblid)) +
+  geom_line() +
+  labs(title="SIPS Neg")
+
+ggplot(sips_change, aes(x=diff_in_days, y=GEN_3456, color=bblid)) +
+  geom_line() +
+  labs(title="SIPS Gen")
+
+#plot change
+ggplot(sips_change, aes(x=pos_diff)) + 
+  geom_histogram(color="white", fill= "darkgreen") + 
+  labs(title="Change in SIPS Pos")
+
+ggplot(sips_change, aes(x=neg_diff)) + 
+  geom_histogram(color="white", fill= "darkgreen") + 
+  labs(title="Change in SIPS Neg")
+
+ggplot(sips_change, aes(x=gen_diff)) + 
+  geom_histogram(color="white", fill= "darkgreen") + 
+  labs(title="Change in SIPS Gen")
+```
+
+look at just change immediately pre-post 7T
+
+``` {r}
+#define baseline - scan closest to 7T
+#find smallest datediff that's >=365
+post <- sips_scan %>%
+  group_by(bblid) %>%
+  na.omit(POS_345, NEG_3456, GEN_3456) %>%
+  filter(diff_in_days >= 365) %>%
+  arrange(bblid, diff_in_days) %>%
+  slice(c(1))%>% 
+  rename_with( ~ paste0(.x, "_post"))
+
+#find datediff that's <365 and closest to 0
+pre <- sips_scan %>%
+  group_by(bblid) %>%
+  na.omit(POS_345, NEG_3456, GEN_3456) %>%
+  filter(diff_in_days < 365) %>%
+  mutate(abs_diff_in_days=abs(diff_in_days)) %>%
+  arrange(bblid, abs_diff_in_days) %>%
+  slice(c(1)) %>% 
+  select(!c(abs_diff_in_days)) %>% 
+  rename_with( ~ paste0(.x, "_pre"))
+
+#new dataframe
+proximal_sips <- inner_join(pre, post, by = c("bblid_pre" = "bblid_post")) %>%
+  rename("bblid"="bblid_pre", "first_7t_date"="first_7t_date_post") %>%
+  select(!c(first_7t_date_pre)) %>%
+  mutate(change_pos = (POS_345_post - POS_345_pre),
+         change_neg = (NEG_3456_post - NEG_3456_pre),
+         change_gen = (GEN_3456_post - GEN_3456_pre))
+
+#plot change
+ggplot(proximal_sips, aes(x=change_pos)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="Change in SIPS Pos")
+
+ggplot(proximal_sips, aes(x=change_neg)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="Change in SIPS Neg")
+
+ggplot(proximal_sips, aes(x=change_gen)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="Change in SIPS Gen")
+
+```
+
+## PRIME
+
+## GAF
+
+### GASR
+first looking at GASR data included in diagnosis_long.csv
+
+``` {r gasr}
+#drop missing gasr
+gasr <- redcap_no22 %>% drop_na(GASR_CURRENT)
+
+#list subj with >=2 gasr scores
+multi_gasr <- gasr %>% subset(timepoint==2) %>% select(BBLID)
+#merge to filter to only subj with multiple gasr
+gasr_long <- inner_join(gasr, multi_gasr, by = c("BBLID"))
+
+#filter to first and last gasr scores for each subject
+gasr_long <- gasr_long[order(gasr_long$timepoint),] %>% group_by(BBLID) %>% slice(c(1,n()))
+
+#calculate change in GASR, save and plot
+gasr_change <- gasr_long %>% group_by(BBLID) %>% mutate("gaf_diff"= GASR_CURRENT - lag(GASR_CURRENT), BBLID=as.factor(BBLID)) %>% select(BBLID, gaf_diff) %>% na.omit 
+summary(gasr_change$gaf_diff)
+
+#append calculation of gasr to summary df
+df_sum[nrow(df_sum) + 1,] = c("multi_gasr", nrow(gasr_change), "number unique subjects with 2+ GASR values from REDCap diagnosis.csv")
+
+#plot change in gasr
+ggplot(gasr_change, aes(x=gaf_diff)) + 
+  geom_histogram(bins=25, color="white", fill= "darkgreen") + 
+  labs(title="change in GASR")
+```
+
+### SIPS GAFC
+
+looking through SIPS GAF current 
+
+``` {r gafc}
+#load SIPS
+sips <- read.csv("data/sips_long.csv", header = TRUE, stringsAsFactors = F, na = "")
+summary(sips)
+
+#make list of 22q subj and drop
+q22 <- subset(redcap, HSTATUS == "22q", select = BBLID) %>% unique()
+sips_no22 <- subset(sips, !(bblid %in% q22$BBLID))
+
+#drop missing gasfc
+gafc <- sips_no22 %>% drop_na(GAF_C) 
+
+#list subj with >=2 gafc scores
+multi_gafc <- gafc %>% subset(timepoint==2) %>% select(bblid)
+#merge to filter to only subj with multiple gafc
+gafc_long <- inner_join(gafc, multi_gafc, by = c("bblid"))
+
+#filter to first and last gasr scores for each subject
+gafc_long <- gafc_long[order(gafc_long$timepoint),] %>% group_by(bblid) %>% slice(c(1,n()))
+
+#calculate change in GASR, save and plot
+gafc_change <- gafc_long %>% group_by(bblid) %>% mutate("gafc_diff"= GAF_C - lag(GAF_C), BBLID=as.factor(bblid)) %>% select(bblid, gafc_diff) %>% na.omit 
+summary(gafc_change$gafc_diff)
+
+#append calculation of gasr to summary df
+df_sum[nrow(df_sum) + 1,] = c("multi_gafc", nrow(gafc_change), "number unique subjects with 2+ GAF Current values from SIPS")
+
+#plot change in gasr
+ggplot(gafc_change, aes(x=gafc_diff)) + 
+  geom_histogram(bins=25, color="white", fill= "darkgreen") + 
+  labs(title="change in GAF Current")
+```
+
+## Diagnoses
+
+## One Big Clinical Dataset
+
+Make one big clinical dataset that can be subsectioned to look at different constructs but will also easily show timepoints of subjects (eg on this date, ppt X had diagnosis, SIPS and PRIME).
+Merge additional clinical info (eg added by David) into our sample to potentially use as a predictor

@@ -183,24 +183,26 @@ dx_multi <- dx_multi %>% unite(DIAGNOSIS, c (dx_pscat, goassessDxpmr6), na.rm = 
                                 "CAP.pro" = c("pro", "psy")))
 levels(dx_multi$DIAGNOSIS)
 
-#get 7T dates Kosha used and set formats
-date7t <- read.csv("data/margaret_7T_series.csv", header = TRUE, stringsAsFactors = F, na = "") %>% mutate(date_7T = as.Date(date_7T, format ="%m/%d/%y"))
+#wrong dates
 
-#merge and set date format, arbitrarily set PNC dx dates to 1/1/2000
-dx_multi <- inner_join(dx_multi, date7t, by = c("BBLID" = "bblid")) %>% 
-  mutate(DODIAGNOSIS= ifelse(is.na(DODIAGNOSIS), "2000-01-01", DODIAGNOSIS),
-         DODIAGNOSIS = as.Date(DODIAGNOSIS))
-str(dx_multi$DODIAGNOSIS)
-
-#calc diff (negative values -> dx before 7t)
-dx_multi$diff_in_days = as.numeric(difftime(dx_multi$DODIAGNOSIS, dx_multi$date_7T, units = "days"))
-
-#find subjects that have a dx >356 days post-7T
-post7t <- dx_multi %>% filter(diff_in_days >= 365)
-n_distinct(post7t$BBLID)
-
-#append to summary df
-df_sum[nrow(df_sum) + 1,] = c("1yr_dx", n_distinct(post7t$BBLID), "number unique subjects with 2+ diagnoses in PNC Goassess and/or CAPA who have a dx >= 365 days post-7T")
+# #get 7T dates Kosha used and set formats
+# date7t <- read.csv("data/margaret_7T_series.csv", header = TRUE, stringsAsFactors = F, na = "") %>% mutate(date_7T = as.Date(date_7T, format ="%m/%d/%y"))
+# 
+# #merge and set date format, arbitrarily set PNC dx dates to 1/1/2000
+# dx_multi <- inner_join(dx_multi, date7t, by = c("BBLID" = "bblid")) %>% 
+#   mutate(DODIAGNOSIS= ifelse(is.na(DODIAGNOSIS), "2000-01-01", DODIAGNOSIS),
+#          DODIAGNOSIS = as.Date(DODIAGNOSIS))
+# str(dx_multi$DODIAGNOSIS)
+# 
+# #calc diff (negative values -> dx before 7t)
+# dx_multi$diff_in_days = as.numeric(difftime(dx_multi$DODIAGNOSIS, dx_multi$date_7T, units = "days"))
+# 
+# #find subjects that have a dx >356 days post-7T
+# post7t <- dx_multi %>% filter(diff_in_days >= 365)
+# n_distinct(post7t$BBLID)
+# 
+# #append to summary df
+# df_sum[nrow(df_sum) + 1,] = c("1yr_dx", n_distinct(post7t$BBLID), "number unique subjects with 2+ diagnoses in PNC Goassess and/or CAPA who have a dx >= 365 days post-7T")
 ```
 
 Some people have multiple 7T scan dates - redo by using earliest 7T date to see if there are more ppl with a 1 yr + clinical follow up
@@ -219,7 +221,7 @@ first7t <- first7t %>% mutate(first_7t_date = pmin(X7T_date, ONM_7T_date, na.rm=
 
 #merge into clinical data and drop scan dates from earlier
 dx_multi_first7t <- inner_join(dx_multi, first7t, by = c("BBLID" = "BBLID")) %>% 
-  subset(select = -c(date_7T, diff_in_days)) %>%
+  #subset(select = -c(date_7T, diff_in_days)) %>% from kosha's dates
   mutate(BBLID = as.factor(BBLID))
 #calc diff (negative values -> dx before 7t)
 dx_multi_first7t$diff_in_days = as.numeric(difftime(dx_multi$DODIAGNOSIS, dx_multi_first7t$first_7t_date, units = "days"))
@@ -248,7 +250,8 @@ ggplot(post_first7t, aes(x=diff_in_days, y=BBLID, color=DIAGNOSIS)) +
   geom_vline(xintercept=365) +
   labs(title="Diagnosis Relative to First 7T Scan", x="Days from 7T Scan")
 ```
-see diagnostic trajectory across time -> binned
+see diagnostic trajectory across time of the 32 individuals -> binned
+
 ``` {r fig.height=7}
 #make sure timepoints are factors in an order that makes sense
 levels(post_first7t$timepoint)
@@ -267,11 +270,110 @@ ggplot(dx_7t_wide) +
   ggtitle("frequency of categorical trajectories")
 ```
 
-find change in dx across time - this includes changes before 7t and after 7t - want to see just changes where the 7t happened in the middle
+```{r eval=F}
+#regroup a little bit to simplify
+levels(dx_7t_wide$trajectory)
+
+dx_7t_wide %>% mutate(trajectory = fct_collapse(trajectory, 
+                 "GO.PS to CAP.pro" = c(levels(dx_7t_wide$trajectory)[2:4]),
+                 "GO.PS to CAP.pro to other" = c(levels(dx_7t_wide$trajectory)[5:6]),
+                 "GO.PS to TD to other" = c(levels(dx_7t_wide$trajectory)[10, 12, 15]),
+                 "GO.PS to TD to CAP.pro" = c(levels(dx_7t_wide$trajectory)[9, 11, 13, 14]),
+                 "other to CAP.pro" = c(levels(dx_7t_wide$trajectory)[16]),
+                 "other to TD" = c(levels(dx_7t_wide$trajectory)[17]),
+                 "TD to other" = c(levels(dx_7t_wide$trajectory)[18:20]),
+                 "TD" = c(levels(dx_7t_wide$trajectory)[21:22]),
+                 "TD to CAP.pro" = c(levels(dx_7t_wide$trajectory)[23]),
+                 "CAP.pro" = c(levels(dx_7t_wide$trajectory)[1]),
+                 "GO.PS to other to CAP.pro" = c(levels(dx_7t_wide$trajectory)[7]),
+                 "GO.PS to CAP.pro to other" = c(levels(dx_7t_wide$trajectory)[8]))) 
+
+                ggplot() + 
+                geom_bar(aes(x=trajectory), stat="count") + 
+                theme(axis.text.x = element_text(angle = 90)) + 
+                ggtitle("frequency of categorical trajectories simplified")
+```
+
+find change in dx across time among 32 subj
+
+find timepoints for each subject that bookend 7T date
 
 ``` {r}
+#find smallest datediff that's >=365
+post <- post_first7t %>%
+  group_by(BBLID) %>%
+  filter(diff_in_days >= 365) %>%
+  arrange(BBLID, diff_in_days) %>%
+  slice(c(1)) %>%
+  select(BBLID, DODIAGNOSIS, DIAGNOSIS, first_7t_date, diff_in_days)
+  
+dx_post <- post %>% rename_with( ~ paste0(.x, "_post"))
 
-#finding ppt where dx changed between timepoints
+#find datediff that's <365 and closest to 0
+pre <- post_first7t %>%
+  group_by(BBLID) %>%
+  filter(diff_in_days < 365) %>%
+  mutate(abs_diff_in_days=abs(diff_in_days)) %>%
+  arrange(BBLID, abs_diff_in_days) %>%
+  slice(c(1)) %>%
+  select(BBLID, DODIAGNOSIS, DIAGNOSIS, first_7t_date, diff_in_days)
+
+dx_pre <- pre %>% select(BBLID, DODIAGNOSIS, DIAGNOSIS, diff_in_days) %>% rename_with( ~ paste0(.x, "_pre"))
+
+#new dataframe
+proximal_dx <- inner_join(dx_post, dx_pre, by = c("BBLID_post" = "BBLID_pre")) %>% 
+  rename("BBLID"="BBLID_post", "first_7t_date"="first_7t_date_post")
+
+```
+
+plot
+
+```{r}
+#make long df
+proximal_long <- rbind(pre, post)
+
+#assess change
+prox_change <- proximal_long %>%
+  group_by(BBLID) %>%
+  arrange(BBLID, diff_in_days) %>%
+  mutate(dx_change = case_when(DIAGNOSIS != lag(DIAGNOSIS) ~ TRUE, TRUE ~ FALSE)) 
+  
+f <- prox_change %>% subset(dx_change == "TRUE", select = BBLID) %>% unique()
+
+#append to summary df
+df_sum[nrow(df_sum) + 1,] = c("dx_change", nrow(f), "number unique subjects who's diagnostic category changed between their baseline (nearest dx to 7T) and followup (first dx 365+ days post-scan)")
+
+#plot
+proximal_long %>% 
+  ggplot(aes(x=diff_in_days, y=BBLID, color=DIAGNOSIS)) + 
+  geom_point() +
+  geom_vline(xintercept=365) +
+  labs(title="Nearest Diagnoses Relative to First 7T Scan", x="Days from 7T Scan")
+```
+
+8 subj had change in dx between nearest 7T clinical timepoint and first 1yr + followup
+
+```{r}
+#make table of those 8
+changers <- subset(dx_7t_wide, (BBLID %in% f$BBLID))
+names(changers)
+
+table(droplevels(changers$trajectory)) #table of all dx
+
+#plot of most proximall dx for changers
+proximal_long %>% 
+  subset(BBLID %in% f$BBLID) %>%
+  ggplot(aes(x=diff_in_days, y=BBLID, color=DIAGNOSIS)) + 
+  geom_point() +
+  geom_vline(xintercept=365) +
+  labs(title="Ppts with Change in Dx Closest to 7T", x="Days from 7T Scan")
+```
+
+*to do: see change between baseline and ANY 365+ followup*
+
+messing around to see change in dx more broadly
+``` {r}
+#finding ppt where dx changed between any set of timepoints
 dx_changes <- post_first7t %>%
   group_by(BBLID) %>%
   arrange(BBLID, diff_in_days) %>%
