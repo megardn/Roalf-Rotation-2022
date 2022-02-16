@@ -15,7 +15,7 @@ load packages
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2)
+pacman::p_load(tidyverse, ggplot2, ggpubr)
 ```
 
 ## 7T dates
@@ -58,8 +58,7 @@ redcap <- read.csv("data/diagnosis_long.csv", header = TRUE, stringsAsFactors = 
 
 #load SIPS
 sips <- read.csv("data/sips_long.csv", header = TRUE, stringsAsFactors = F, na = "") %>%
-  mutate(DOSIPS = as.Date(DOSIPS)) %>%
-  select(bblid, DOSIPS, GAF_C, GAF_H, SPD, FHPI, POS_345, POS_6, NEG_3456, DIS_3456, GEN_3456, PRODROMAL) #filter down to summary scores
+  mutate(DOSIPS = as.Date(DOSIPS))
 
 #load PRIME
 prime <- read.csv("data/prime_long.csv", header = TRUE, stringsAsFactors = F, na = "") %>%
@@ -82,38 +81,128 @@ duplicated(syrp) #no duplicates across Roalf and Satterthwiate csvs
 q22 <- subset(redcap, HSTATUS == "22q", select = BBLID) %>% unique()
 ```
 
-## SIPS
+## SIPS & SOPS
 
-``` {r sips}
+``` {r sips&sops}
 #7t and sips
-sips_scan <- inner_join(sips, first7t, by = c("bblid" = "BBLID")) %>%
+sips_date <- inner_join(sips, first7t, by = c("bblid" = "BBLID")) %>%
   mutate(bblid = as.factor(bblid)) %>%
   subset(!(bblid %in% q22$BBLID)) #drop 22q sub
+str(sips_scan$bblid)
 #calc diff (negative values -> dx before 7t)
-sips_scan$diff_in_days = as.numeric(difftime(sips_scan$DOSIPS, sips_scan$first_7t_date, units = "days"))
+sips_date$diff_in_days = as.numeric(difftime(sips_date$DOSIPS, sips_date$first_7t_date, units = "days"))
 # drop data more than 1 yr prior to scan
-sips_scan <- subset(sips_scan, diff_in_days >= -365)
-summary(sips_scan$diff_in_days)
+sips_date <- subset(sips_date, diff_in_days >= -365)
+str(sips_date$bblid) #no subj lost
+min(sips_date$diff_in_days) #confirm
 
-#find subjects that have a baseline sips up to 364 days post-7T
-clin364 <-  sips_scan %>% na.omit(POS_345, NEG_3456, GEN_3456) %>% subset(diff_in_days <= 364, select = bblid) %>% unique()
-#find subjects that have a followup sips >365 days post-7T
-clin365 <- sips_scan %>% na.omit(POS_345, NEG_3456, GEN_3456) %>% subset(diff_in_days >= 365, select = bblid) %>% unique()
-#filter df
-sips_scan <- subset(sips_scan, (bblid %in% clin365$bblid & bblid %in% clin364$bblid))
+#find subjects that have a baseline sips and sops up to 364 days post-7T 
+clin364_sip <-  sips_date  %>% subset(diff_in_days <= 364, select = bblid) %>% unique()
+#find subjects that have a followup sips sops >365 days post-7T 
+clin365_sip <- sips_date %>% subset(diff_in_days >= 365, select = bblid) %>% unique()
+#filter df using P1 as indicator for completion
+sips.sops_scan <- subset(sips_date, (bblid %in% clin365_sip$bblid & bblid %in% clin364_sop$bblid))
+
+names(sips.sops_scan)
+
+```
+
+SOPS is subscale components of SIPS (which are overall ratings of severity).
+Focusing on SOPS for now (summing within subscales Pos, Neg, Gen, Disorg) for now - seems to be valid scoring based on ct.gov, could also sum across.
+
+``` {r sops}
+#filter for SOPS completion
+sops_scan <- sips.sops_scan %>% drop_na(P1) %>% 
+  select(1, 7:26, 47, 48) %>% #subset columns
+  mutate(sops_p = rowSums(across(3:7)),
+         sops_n = rowSums(across(8:13)),
+         sops_d = rowSums(across(14:17)),
+         sops_g = rowSums(across(18:21)),
+         sops_tot = rowSums(across(3:21))) #create subset composite scores
 
 #plot for fun
-ggplot(sips_scan, aes(x=diff_in_days, y=bblid, color=bblid)) + 
+ggplot(sops_scan, aes(x=diff_in_days, y=bblid, color=sops_tot)) + 
   geom_point() +
   geom_vline(xintercept=365) +
-  labs(title="SIPS Relative to First 7T Scan", x="Days from 7T Scan") +
+  labs(title="SOPS Relative to First 7T Scan", x="Days from 7T Scan") +
   theme(legend.position = "none")
+
+length(unique(sops_scan$bblid))
+```
+
+There are ` r length(unique(sops_scan$bblid))` (27) subjects with SOPS at baseline and at least 1 post-1 yr followup. 
+
+look at just change immediately pre-post 7T
+
+``` {r sops.change.prox}
+#define baseline - scan closest to 7T
+#find smallest datediff that's >=365
+post_sops <- sops_scan %>%
+  group_by(bblid) %>%
+  filter(diff_in_days >= 365) %>%
+  arrange(bblid, diff_in_days) %>%
+  slice(c(1))%>% 
+  rename_with( ~ paste0(.x, "_post"))
+
+#find datediff that's <365 and closest to 0
+pre_sops <- sops_scan %>%
+  group_by(bblid) %>%
+  filter(diff_in_days < 365) %>%
+  mutate(abs_diff_in_days=abs(diff_in_days)) %>%
+  arrange(bblid, abs_diff_in_days) %>%
+  slice(c(1)) %>% 
+  select(!c(abs_diff_in_days)) %>% 
+  rename_with( ~ paste0(.x, "_pre"))
+
+#new dataframe
+proximal_sops <- inner_join(pre_sops, post_sops, by = c("bblid_pre" = "bblid_post")) %>%
+  rename("bblid"="bblid_pre", "first_7t_date"="first_7t_date_post") %>%
+  select(!c(first_7t_date_pre)) %>%
+  mutate(change_pos = (sops_p_post - sops_p_pre),
+         change_neg = (sops_n_post - sops_n_pre),
+         change_dis = (sops_d_post - sops_d_pre),
+         change_gen = (sops_g_post - sops_g_pre),
+         change_tot = (sops_tot_post - sops_tot_pre))
+
+#plot change
+p <- ggplot(proximal_sops, aes(x=change_pos)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="Positive")
+
+n <- ggplot(proximal_sops, aes(x=change_neg)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="Negative")
+
+d <- proximal_sops %>% drop_na(change_dis) %>% 
+  ggplot(aes(x=change_dis)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="Disorganized")
+
+g <- ggplot(proximal_sops, aes(x=change_gen)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="General")
+
+sops_sub_plot <- ggpubr::ggarrange(p, n, d, g, common.legend = F, ncol = 4)
+annotate_figure(p=sops_sub_plot, top = text_grob("Change in SOPS Subscales Immediately Pre-Post 7T", 
+                               color = "black", face = "bold", size = 14))
+
+ggplot(proximal_sops, aes(x=change_tot)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="Change in SOPS Total")
+
+summary(proximal_sops[55:59])
+```
+
+Pulling SIPS ratings; **ask Kosha about how these are coded.** 
+
+``` {r sips}
+#filter df for sips completion
+sips_scan <- sips.sops_scan %>% drop_na(POS_345, NEG_3456, GEN_3456)
 
 length(unique(sips_scan$bblid))
 ```
-There are ` r length(unique(sips_scan$bblid))` (11) subjects with SIPS at baseline and at least 1 post-1 yr followup
 
-*confirm correct summary scores pulled*
+There are ` r length(unique(sips_scan$bblid))` (24) subjects with SIPS at baseline and at least 1 post-1 yr followup
 
 ``` {r sips.change}
 names(sips_scan)
@@ -155,7 +244,7 @@ ggplot(sips_change, aes(x=gen_diff)) +
 
 look at just change immediately pre-post 7T
 
-``` {r}
+``` {r sips.change.prox}
 #define baseline - scan closest to 7T
 #find smallest datediff that's >=365
 post <- sips_scan %>%
@@ -201,6 +290,8 @@ ggplot(proximal_sips, aes(x=change_gen)) +
 ```
 
 ## PRIME
+
+Prime Screen scores were computed by totaling the number of items endorsed at the level of 5 or 6 and via raw sum of scores(SIP003 to SIP014) *check items* (per [Zak's paper](https://doi.org/10.1176/appi.ps.201800536) and [scale authors](10.1016/j.schres.2012.07.022))
 
 ## GAF
 
