@@ -15,16 +15,16 @@ load packages
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr)
 ```
 
 ## 7T dates
 
 Find the first 7T each participant is done to maximize length of potential follow-ups. Using glucest subject list extracted from .xls (list from David 1/13/22).
 
-Note: doesn't include scans past June 2019. Will need to update but probalby won't add many subj. with 1 yr post-7T clinical timepoints
+*Note: doesn't include scans past June 2019. Will need to update but probably won't add many subj. with 1 yr post-7T clinical timepoints*
 
-``` {r load.7t}
+``` {r load.7t, echo=FALSE}
 #start with complete glucest date list - clean up and compare X7T_date and ONM_7T_date
 glucest <- read.csv("data/7t_dates.csv", header=T)
 str(glucest)
@@ -36,18 +36,23 @@ first7t <- glucest %>% mutate_all(na_if,"") %>%
 str(first7t)
 
 #create new column with only first scan dates
-first7t <- first7t %>% mutate(first_7t_date = pmin(X7T_date, ONM_7T_date, na.rm=TRUE)) %>% select(BBLID, first_7t_date)
+first7t <- first7t %>% mutate(first_7t_date = pmin(X7T_date, ONM_7T_date, na.rm=T)) %>% 
+  select(BBLID, first_7t_date)
 ```
 
 ## Load All Data
 
-```{r load.clinical}
+*Notes* 
+* HOW TO ID 22Q PPTS FROM PNC FOR REMOVAL?!?!
+* no date available for PNC dx, arbitrarily picking Jan 1 2000
+
+```{r load.clinical, echo=FALSE}
 #load PNC data
 goassess <- read.csv("/Users/megardn/ImageData/PMACS_remote/clinical/goassess_diagnosis.csv", header=T) %>%
-  mutate(go_dx = as.factor(goassessDxpmr6),
+  mutate(dx = as.factor(goassessDxpmr6),
         dx_source = "goassess",
-        date = as.Date("2000-01-01")) %>% #no date available for PNC dx, arbitrarily picking Jan 1 2000
-        select (bblid, go_dx, dx_source, date)
+        dx_date = as.Date("2000-01-01")) %>% #no date available for PNC dx, arbitrarily picking Jan 1 2000
+        select (bblid, dx, dx_source, dx_date)
 
 ### HOW TO ID 22Q PPTS FROM PNC FOR REMOVAL?!?!
 
@@ -73,22 +78,99 @@ syrp_roalf <- read.csv("data/7TSharedScalesCollec-Roalf7TProjects_DATA_2022-02-1
 syrp_sat <- read.csv("data/7TSharedScalesCollec-Satterthwaite7T_DATA_2022-02-11_1858.csv", header = TRUE, stringsAsFactors = F, na = "")
 syrp <- rbind(syrp_roalf, syrp_sat) %>% 
   mutate(date = as.Date(date))
-duplicated(syrp) #no duplicates across Roalf and Satterthwiate csvs
+table(duplicated(syrp)) #no duplicate rows across Roalf and Satterthwiate csvs
 ```
 
-``` {r}
+
+``` {r 22q, echo=FALSE}
 #make list of 22q subj
 q22 <- subset(redcap, HSTATUS == "22q", select = BBLID) %>% unique()
+
+#remove 22q participants from scan list, that way it'll apply to all subsequent merges w/ clinical data
+first7t <- first7t %>% subset(!(BBLID %in% q22$BBLID)) #drop 22q sub
+length(unique(first7t$BBLID))
+```
+
+There are `r length(unique(first7t$BBLID))` (132) subjects who have 7T scans, excluding 22q pts ID'd from Kosha's RedCap data
+
+## Diagnoses
+
+Won't be the focus of our analyses but will be useful for grouping
+
+``` {r dx.clean}
+#first clean redcap dx source info
+names(redcap)
+sources <- c("FROM_CAPA", "FROM_DIGS", "FROM_SCID", "FROM_FIGS", "FROM_RECORDS", "FROM_MINI", "FROM_SIPS")
+redcap[,sources] <- redcap[,sources] %>% 
+  transmute_all(funs(ifelse(. == 1, deparse(substitute(.)), NA))) #replace coding with col name
+redcap <- redcap %>% unite(dx_source, c(sources), na.rm = TRUE, remove=FALSE) #merge across - not pretty but gets the point across for now
+
+redcap_dx <- redcap %>%
+  rename(bblid=BBLID, dx_date=DODIAGNOSIS, dx=dx_pscat) %>%
+  mutate(dx_date=as.Date(dx_date)) %>%
+  select (bblid, dx, dx_source, dx_date)
+  
+
+all_dx <- rbind(redcap_dx,goassess)%>% 
+  subset(!(bblid %in% q22$BBLID)) #drop 22q sub
+id_date <- all_dx %>% select(bblid, dx_date)
+table(duplicated(id_date))#no duplicate rows, all ID and dx_date combos unique!
+```
+
+Now combine dx with scan dates:
+
+``` {r dx.match}
+dx_scan_date <- right_join(all_dx, first7t, by = c("bblid" = "BBLID")) %>%
+  mutate(bblid = as.factor(bblid))
+
+length(unique(dx_scan_date$bblid))
+sum(is.na(dx_scan_date$dx)) #some subjects with scans have no diagnosis from Kosha's redcap or goassess
+
+dx_missing <- dx_scan_date %>% subset(is.na(dx), select = c(bblid, first_7t_date))
+```
+
+**There are `r sum(is.na(dx_scan_date$dx))` (24) subj who have 7T scans but are missing diagnoses!**
+
+Seem to have some data for these ppts in spreadsheets David added - merge in to pull protocol names/numbers and dates for when they may have gotten assessments and ask David for where diagnoses may be (or just other clinical data)
+
+Proceeding for now with dx available, recoding factors for consistency between PNC and RedCap when possible:
+
+``` {r dx.factor}
+table(dx_scan_date$dx)
+dx_scan_date <- dx_scan_date %>% mutate(dx = as.factor(dx))
+dx_scan_date$dx <- fct_collapse(dx_scan_date$dx, "healthy" = c("noDSMdx", "TD"),
+                                "other_dx" = c("OP", "other"),
+                                "psych_spect" = c("psy", "PS", "pro")) #recode factors
+
+#make new df with only baseline dx (closest to 7T)
+#calc diff (negative values -> dx before 7t)
+dx_scan_date$dx_diff = as.numeric(difftime(dx_scan_date$dx_date, dx_scan_date$first_7t_date, units = "days"))
+#select one dx per subject with date closest to &t
+dx_baseline <- dx_scan_date %>%
+  mutate(abs_diff_in_days=abs(dx_diff)) %>%
+  group_by(bblid) %>%
+  arrange(abs_diff_in_days) %>%
+  slice(c(1)) %>%
+  ungroup() %>%
+  select(!c(abs_diff_in_days))
+
+summary(dx_baseline$dx_diff) #not great alignment between date of dx and date of scan
+ggplot(dx_baseline, aes(x=dx_diff, y=bblid, color=dx)) + 
+  geom_point() +
+  labs(title="Dx Relative to First 7T Scan", x="Days from 7T Scan") +
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
 ```
 
 ## SIPS & SOPS
 
+Some subjects have multiple assessments on one day (one from proband one from family, etc); need to be sure to pick only `TYPE == "COMBINED"` per discussion with David. If no combined, pick proband.
+
 ``` {r sips&sops}
 #7t and sips
 sips_date <- inner_join(sips, first7t, by = c("bblid" = "BBLID")) %>%
-  mutate(bblid = as.factor(bblid)) %>%
-  subset(!(bblid %in% q22$BBLID)) #drop 22q sub
-str(sips_scan$bblid)
+  mutate(bblid = as.factor(bblid))
+str(sips_date$bblid)
 #calc diff (negative values -> dx before 7t)
 sips_date$diff_in_days = as.numeric(difftime(sips_date$DOSIPS, sips_date$first_7t_date, units = "days"))
 # drop data more than 1 yr prior to scan
@@ -100,25 +182,66 @@ min(sips_date$diff_in_days) #confirm
 clin364_sip <-  sips_date  %>% subset(diff_in_days <= 364, select = bblid) %>% unique()
 #find subjects that have a followup sips sops >365 days post-7T 
 clin365_sip <- sips_date %>% subset(diff_in_days >= 365, select = bblid) %>% unique()
-#filter df using P1 as indicator for completion
-sips.sops_scan <- subset(sips_date, (bblid %in% clin365_sip$bblid & bblid %in% clin364_sop$bblid))
+#filter df on date
+sips.sops_scan <- subset(sips_date, (bblid %in% clin365_sip$bblid & bblid %in% clin364_sip$bblid))
 
-names(sips.sops_scan)
+length(unique(sips.sops_scan$bblid))
 
+#if subj has more than one assessment for same day, select Combined 
+sips.sops_scan <- sips.sops_scan %>% mutate(TYPE = as.factor(TYPE))
+levels(sips.sops_scan$TYPE) 
+sips.sops_scan$TYPE <- fct_collapse(sips.sops_scan$TYPE, "Proband" = c("Proband", "proband", "P", "FP", "IP")) #combine all proband
+sips.sops_scan$TYPE <- factor(sips.sops_scan$TYPE, levels = c("Combined", "Proband", "Collateral"))
+
+#group data to select correct type (defined as lowest ordered level)
+sips.sops_scan <- sips.sops_scan %>%
+  group_by(bblid, DOSIPS) %>%
+  arrange(TYPE) %>%
+  slice(c(1)) %>%
+  ungroup()
+
+length(unique(sips.sops_scan$bblid)) #confirm no subjects deleted
+skimr::skim(sips.sops_scan)
 ```
 
-SOPS is subscale components of SIPS (which are overall ratings of severity).
-Focusing on SOPS for now (summing within subscales Pos, Neg, Gen, Disorg) for now - seems to be valid scoring based on ct.gov, could also sum across.
+Add in diagnoses at baseline:
+
+```{r sips.sops.dx}
+dx_sips.sops_scan <- left_join(sips.sops_scan, dx_baseline, by = c("bblid" = "bblid")) %>%
+  rename(first_7t_date = first_7t_date.x) %>%
+  select(-first_7t_date.y)
+#summary(dx_sips.sops_scan)
+names(dx_sips.sops_scan)
+```
+
+### S0PS
+
+SOPS seems to be the 12 item components of SIPS (which are overall ratings of severity).
+Focusing on SOPS (summing within and subscales Pos, Neg, Gen, Disorg) - seem to be valid scoring based on ct.gov. 
 
 ``` {r sops}
 #filter for SOPS completion
-sops_scan <- sips.sops_scan %>% drop_na(P1) %>% 
-  select(1, 7:26, 47, 48) %>% #subset columns
-  mutate(sops_p = rowSums(across(3:7)),
-         sops_n = rowSums(across(8:13)),
-         sops_d = rowSums(across(14:17)),
-         sops_g = rowSums(across(18:21)),
-         sops_tot = rowSums(across(3:21))) #create subset composite scores
+sops_scan <- dx_sips.sops_scan %>% 
+  drop_na(P1) %>% 
+  select(c(1, 7:26, 47:51)) #subset columns
+
+#since dropping NA we need to refilter pre-post subj
+##find subjects that have a baseline sops up to 364 days post-7T 
+clin364_sop <-  sops_scan  %>% subset(diff_in_days <= 364, select = bblid) %>% unique()
+##find subjects that have a followup sips sops >365 days post-7T 
+clin365_sop <- sops_scan %>% subset(diff_in_days >= 365, select = bblid) %>% unique()
+##filter df
+sops_scan <- subset(sops_scan, (bblid %in% clin365_sop$bblid & bblid %in% clin364_sop$bblid))
+
+sum(is.na(sops_scan[3:21]))#see missing sops scores
+
+sops_scan <- sops_scan %>% mutate(sops_p = rowSums(across(3:7), na.rm=F),
+                                  sops_n = rowSums(across(8:13), na.rm=F),
+                                  sops_d = rowSums(across(14:17), na.rm=F),
+                                  sops_g = rowSums(across(c(G1, G2, G3, G4)), na.rm=F), #index not working for some unknown and horribly frustrating reason
+                                  sops_tot = rowSums(across(c(sops_p, sops_n, sops_d, sops_g), na.rm=F)))
+
+sum(is.na(sops_scan$sops_tot))
 
 #plot for fun
 ggplot(sops_scan, aes(x=diff_in_days, y=bblid, color=sops_tot)) + 
@@ -128,28 +251,30 @@ ggplot(sops_scan, aes(x=diff_in_days, y=bblid, color=sops_tot)) +
   theme(legend.position = "none")
 
 length(unique(sops_scan$bblid))
+sops_tot <- sops_scan %>% drop_na(sops_tot)
+length(unique(sops_tot$bblid))
 ```
 
-There are ` r length(unique(sops_scan$bblid))` (27) subjects with SOPS at baseline and at least 1 post-1 yr followup. 
+There are `r length(unique(sops_scan$bblid))` (27) subjects with SOPS at baseline and at least 1 post-1 yr followup; total scores are available for `r length(unique(sops_tot$bblid))` subjects. Dropping subjects with missing items for now, could be used for subscale scores
 
-look at just change immediately pre-post 7T
+Looking just at change immediately pre-post 7T:
 
 ``` {r sops.change.prox}
 #define baseline - scan closest to 7T
 #find smallest datediff that's >=365
-post_sops <- sops_scan %>%
+post_sops <- sops_tot %>%
   group_by(bblid) %>%
   filter(diff_in_days >= 365) %>%
-  arrange(bblid, diff_in_days) %>%
+  arrange(bblid, diff_in_days, dx_date) %>%
   slice(c(1))%>% 
   rename_with( ~ paste0(.x, "_post"))
 
 #find datediff that's <365 and closest to 0
-pre_sops <- sops_scan %>%
+pre_sops <- sops_tot %>%
   group_by(bblid) %>%
   filter(diff_in_days < 365) %>%
   mutate(abs_diff_in_days=abs(diff_in_days)) %>%
-  arrange(bblid, abs_diff_in_days) %>%
+  arrange(bblid, abs_diff_in_days, dx_date) %>%
   slice(c(1)) %>% 
   select(!c(abs_diff_in_days)) %>% 
   rename_with( ~ paste0(.x, "_pre"))
@@ -190,33 +315,69 @@ ggplot(proximal_sops, aes(x=change_tot)) +
   geom_bar(color="white", fill= "darkgreen") + 
   labs(title="Change in SOPS Total")
 
-summary(proximal_sops[55:59])
+ggplot(proximal_sops, aes(x=change_tot, y=sops_tot_pre, color=dx_pre)) +
+  geom_point() +
+  geom_text_repel(aes(label = bblid)) +
+  labs(title="Change in SOPS Total Scores Over Time", x="Change (Post - Pre)", y="Baseline SOPS Total")
 ```
 
-Pulling SIPS ratings; **ask Kosha about how these are coded.** 
+Negative change -> ppt's score is getting lower (i.e. symptoms improving)
+
+``` {r sops.prox}
+proximal_sops %>% select(23, 22, 52, 61:65) %>% summary()
+```
+
+Line plot of all SOPS Total for each subj:
+
+``` {r sops.longitudinal}
+ggplot(sops_scan, aes(x=diff_in_days, y=sops_tot, color=bblid)) +
+  geom_line() +
+  geom_vline(xintercept=365) +
+  labs(title="SOPS Total Scores Over Time")
+```
+
+
+### SIPS
+
+Pulling "SIPS" ratings number of Pos, Neg, Gen, etc items on SOPS coded as 3,4,5, or 6 depending on suffix. Not planning to use these in final ananlyses, but the code was already here.
 
 ``` {r sips}
 #filter df for sips completion
-sips_scan <- sips.sops_scan %>% drop_na(POS_345, NEG_3456, GEN_3456)
+sips_scan <- dx_sips.sops_scan %>% 
+  drop_na(POS_345, POS_6, NEG_3456, GEN_3456) %>% 
+  mutate(POS_3456= rowSums(across(c(POS_345, POS_6)))) #concatenating across frequency of p sxs for consistency across subscales
+
+#since dropping NA we need to refilter pre-post subj
+##find subjects that have a baseline sops up to 364 days post-7T 
+clin364_sip2 <-  sips_scan  %>% subset(diff_in_days <= 364, select = bblid) %>% unique()
+##find subjects that have a followup sips sops >365 days post-7T 
+clin365_sip2 <- sips_scan %>% subset(diff_in_days >= 365, select = bblid) %>% unique()
+##filter df
+sips_scan <- subset(sips_scan, (bblid %in% clin364_sip2$bblid & bblid %in% clin365_sip2$bblid))
 
 length(unique(sips_scan$bblid))
 ```
 
-There are ` r length(unique(sips_scan$bblid))` (24) subjects with SIPS at baseline and at least 1 post-1 yr followup
+There are `r length(unique(sips_scan$bblid))` (14) subjects with SIPS at baseline and at least 1 post-1 yr followup
+
+Calculate change across time (i.e. change from one timepoint to the next):
 
 ``` {r sips.change}
 names(sips_scan)
+
 #calculate change in SIPS scores, save and plot
 sips_change <- sips_scan %>% 
   group_by(bblid) %>% 
-  mutate("pos_diff"= POS_345 - lag(POS_345),
+  arrange(diff_in_days) %>%
+  mutate("pos_diff"= POS_3456 - lag(POS_3456),
          "neg_diff"= NEG_3456 - lag(NEG_3456),
-         "gen_diff"= GEN_3456 -lag(GEN_3456))
+         "gen_diff"= GEN_3456 -lag(GEN_3456)) %>%
+  ungroup()
 
 summary(sips_change)
 
 #plot longitudinal scores
-ggplot(sips_change, aes(x=diff_in_days, y=POS_345, color=bblid)) +
+ggplot(sips_change, aes(x=diff_in_days, y=POS_3456, color=bblid)) +
   geom_line() +
   labs(title="SIPS Pos")
 
@@ -242,14 +403,13 @@ ggplot(sips_change, aes(x=gen_diff)) +
   labs(title="Change in SIPS Gen")
 ```
 
-look at just change immediately pre-post 7T
+Looking at just change immediately pre-post 7T
 
 ``` {r sips.change.prox}
 #define baseline - scan closest to 7T
 #find smallest datediff that's >=365
 post <- sips_scan %>%
   group_by(bblid) %>%
-  na.omit(POS_345, NEG_3456, GEN_3456) %>%
   filter(diff_in_days >= 365) %>%
   arrange(bblid, diff_in_days) %>%
   slice(c(1))%>% 
@@ -258,7 +418,6 @@ post <- sips_scan %>%
 #find datediff that's <365 and closest to 0
 pre <- sips_scan %>%
   group_by(bblid) %>%
-  na.omit(POS_345, NEG_3456, GEN_3456) %>%
   filter(diff_in_days < 365) %>%
   mutate(abs_diff_in_days=abs(diff_in_days)) %>%
   arrange(bblid, abs_diff_in_days) %>%
@@ -269,8 +428,8 @@ pre <- sips_scan %>%
 #new dataframe
 proximal_sips <- inner_join(pre, post, by = c("bblid_pre" = "bblid_post")) %>%
   rename("bblid"="bblid_pre", "first_7t_date"="first_7t_date_post") %>%
-  select(!c(first_7t_date_pre)) %>%
-  mutate(change_pos = (POS_345_post - POS_345_pre),
+  select(bblid, DOSIPS_pre, POS_345_pre, POS_6_pre, POS_3456_pre, NEG_3456_pre, DIS_3456_pre, GEN_3456_pre, diff_in_days_pre, dx_pre, dx_source_pre, dx_date_pre, dx_diff_pre, DOSIPS_post, POS_345_post, POS_6_post, POS_3456_post, NEG_3456_post, DIS_3456_post, GEN_3456_post, diff_in_days_post) %>%
+  mutate(change_pos = (POS_3456_post - POS_3456_pre),
          change_neg = (NEG_3456_post - NEG_3456_pre),
          change_gen = (GEN_3456_post - GEN_3456_pre))
 
@@ -291,76 +450,294 @@ ggplot(proximal_sips, aes(x=change_gen)) +
 
 ## PRIME
 
-Prime Screen scores were computed by totaling the number of items endorsed at the level of 5 or 6 and via raw sum of scores(SIP003 to SIP014) *check items* (per [Zak's paper](https://doi.org/10.1176/appi.ps.201800536) and [scale authors](10.1016/j.schres.2012.07.022))
+Prime Screen scores were computed by totaling the number of items endorsed at the level of 5 or 6 and via raw sum of scores(SIP003 to SIP014) (per [Zak's paper](https://doi.org/10.1176/appi.ps.201800536) *and* [scale authors](10.1016/j.schres.2012.07.022)). Combining data from Kosha and David, keeping proband over collateral reports when one subject has both on the same day.
+
+``` {r prime}
+#add prime scores from david's spreadsheets
+syrp_prime <- syrp %>%
+  select(5, 7, 10, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35) %>%
+  rename(sip003=prime_1, sip004=prime_2, sip005=prime_3, sip006=prime_4, sip007=prime_5, sip008=prime_6, sip009=prime_7, sip010=prime_8, sip011=prime_9, sip012=prime_10, sip013=prime_11, sip014=prime_12, source=admin_proband) #rename to match redcap prime items
+prime_s <- prime %>% 
+  mutate(admin_proband = str_detect(redcapid, "P"), 
+         admin_collat = str_detect(redcapid, "C"),
+         source = case_when(admin_proband == TRUE ~ "p",
+                           admin_collat == TRUE ~ "c")) %>%
+    select(1, 5, 75, 8:19) #subset columns
+
+#combine both prime data sources
+all_prime <- rbind(syrp_prime,prime_s) %>%
+   drop_na(4:15) %>% #drop rows with missing values
+   mutate (bblid=as.factor(bblid)) %>%
+   distinct() #keep only unique rows
+
+#check for multiple assessments per subj per day
+id_date <- all_prime %>% select(bblid, date)
+table(duplicated(id_date))
+
+#select proband assessment if there are two proband & collateral assesments on one day
+all_prime$source <- factor(all_prime$source, ordered = TRUE, levels=c("p", "c"))
+prime_p <- all_prime %>%
+  group_by(bblid, date) %>% #select only the first instance of a specific bblid on a specific day ~ proband
+  arrange(source) %>%
+  slice(c(1)) %>%
+  ungroup()
+
+#join with 7T dates
+prime_date <- inner_join(prime_p, dx_baseline, by = c("bblid" = "bblid")) %>%
+  mutate(bblid = as.factor(bblid)) %>%
+  subset(!(bblid %in% q22$BBLID)) #drop 22q sub
+
+#calc diff (negative values -> prime before 7t)
+prime_date$diff_in_days = as.numeric(difftime(prime_date$date, prime_date$first_7t_date, units = "days"))
+
+# drop data more than 1 yr prior to scan
+prime_dx <- subset(prime_date, diff_in_days >= -365)
+str(prime_date$bblid) #no subj lost
+min(prime_date$diff_in_days) #confirm datediff filtered
+
+#find subjects that have a baseline sips and sops up to 364 days post-7T 
+clin364_pr <-  prime_dx %>% subset(diff_in_days <= 364, select = bblid) %>% unique()
+#find subjects that have a followup sips sops >365 days post-7T 
+clin365_pr <- prime_dx %>% subset(diff_in_days >= 365, select = bblid) %>% unique()
+#filter df for appropriate timepoints
+prime_scan <- subset(prime_dx, (bblid %in% clin365_pr$bblid & bblid %in% clin364_pr$bblid)) %>% 
+  mutate(prime_sum = rowSums(across(4:15))) #calculate raw sum across items
+  
+#calculate prime_scores
+prime_scan$count.5 <- apply(prime_scan[4:15], 1, function(x) length(which(x==5)))
+prime_scan$count.6 <- apply(prime_scan[4:15], 1, function(x) length(which(x==6)))
+prime_scan$prime_score <- rowSums(cbind(prime_scan$count.5, prime_scan$count.6))
+
+#plot for fun
+ggplot(prime_scan, aes(x=diff_in_days, y=bblid, color=prime_score)) +
+  geom_point() +
+  geom_vline(xintercept=365) +
+  labs(title="PRIME Score Relative to First 7T Scan", x="Days from 7T Scan")
+
+length(unique(prime_scan$bblid))
+summary(prime_scan)
+```
+
+There are `r length(unique(prime_scan$bblid))` (26) subjects with PRIME scores at baseline and at least 1 post-1 yr followup. 
+
+Look at just change immediately pre-post 7T. **Check calculations for percent change make sense!**
+
+``` {r prime.change.prox}
+#define baseline - scan closest to 7T
+#find smallest datediff that's >=365
+post_prime <- prime_scan %>%
+  group_by(bblid) %>%
+  filter(diff_in_days >= 365) %>%
+  arrange(bblid, diff_in_days) %>%
+  slice(c(1))%>% 
+  rename_with( ~ paste0(.x, "_post"))
+
+#find datediff that's <365 and closest to 0
+pre_prime <- prime_scan %>%
+  group_by(bblid) %>%
+  filter(diff_in_days < 365) %>%
+  mutate(abs_diff_in_days=abs(diff_in_days)) %>%
+  arrange(bblid, abs_diff_in_days) %>%
+  slice(c(1)) %>% 
+  select(!c(abs_diff_in_days)) %>% 
+  rename_with( ~ paste0(.x, "_pre"))
+
+
+#new dataframe
+proximal_prime <- inner_join(pre_prime, post_prime, by = c("bblid_pre" = "bblid_post")) %>%
+  rename("bblid"="bblid_pre", "first_7t_date"="first_7t_date_post") %>%
+  select(!c(first_7t_date_pre)) %>%
+  mutate(change_prime_sum = (prime_sum_post - prime_sum_pre),#calculate change
+         change_prime = (prime_score_post - prime_score_pre),
+         p.change_prime_sum = ((change_prime_sum+1e-10)/(prime_sum_pre+1e-10))*100, #calculating percent change, adding .00000000001 to each to keep from dividing by zero
+         p.change_prime = ((change_prime+1e-10)/(prime_score_pre+1e-10))*100,
+         p.change_prime_sum = round(p.change_prime_sum, digits=1), #rounding to undo small addition
+         p.change_prime = round(p.change_prime, digits=1)) 
+#calculating days between gafc timepoints
+proximal_prime$prime_date_diff = as.numeric(difftime(proximal_prime$date_post, proximal_prime$date_pre, units = "days"))
+
+proximal_prime %>% select(dx_pre, prime_sum_pre, prime_score_pre, prime_sum_post, prime_score_post, change_prime_sum, change_prime, p.change_prime_sum, p.change_prime, prime_date_diff) %>% summary()
+
+#plots
+ggplot(proximal_prime, aes(x=change_prime)) + 
+  geom_histogram(color="white", fill= "darkgreen") + 
+  labs(title="Change in PRIME Score")
+
+ggplot(proximal_prime, aes(x=change_prime_sum)) + 
+  geom_histogram(color="white", fill= "darkgreen") + 
+  labs(title="Change in PRIME Sums")
+```
+
+Very little change in PRIME score (counts of 5 and 6 rated sxs), more variability across score sums. Negative change -> ppt's score is getting lower (i.e. symptoms improving).
+
+
+Plotting PRIME with dx ~ not all points visible due to overlap
+
+``` {r prime.change.plot}
+#plot absolute change between proximal PRIME scores
+ggplot(proximal_prime, aes(x=change_prime_sum, y=prime_sum_pre, color=dx_pre)) +
+  geom_point() +
+  geom_text_repel(aes(label = bblid), max.overlaps = 30) +
+  labs(title="Change in PRIME Sums Over Time", x="Change (Post - Pre)", y="Baseline PRIME Total")
+
+#plot absolute change vs time between proximal GAF Cs
+ggplot(proximal_prime, aes(x=prime_date_diff, y=change_prime_sum, color=dx_pre)) +
+  geom_point() +
+  geom_text_repel(aes(label = bblid), max.overlaps = 30) +
+  labs(title="Change in PRIME By Delta Time", x="Time Between PRIME Assessments (Days)", y="Change PRIME (Post - Pre)")
+```
 
 ## GAF
 
+### GAFC
+
+Looking through SIPS GAF current 
+
+``` {r gafc, echo=FALSE}
+gafc_scan <- dx_sips.sops_scan %>% drop_na(GAF_C) %>%
+  select(bblid, DOSIPS, GAF_C, first_7t_date, diff_in_days, dx, dx_source, dx_date, dx_diff)
+
+#since dropping NA we need to refilter pre-post subj
+##find subjects that have a baseline sops up to 364 days post-7T 
+clin364_gafc <-  gafc_scan  %>% subset(diff_in_days <= 364, select = bblid) %>% unique()
+##find subjects that have a followup sips sops >365 days post-7T 
+clin365_gafc <- gafc_scan %>% subset(diff_in_days >= 365, select = bblid) %>% unique()
+##filter df
+gafc_scan <- subset(gafc_scan, (bblid %in% clin365_gafc$bblid & bblid %in% clin364_gafc$bblid))
+
+length(unique(gafc_scan$bblid))
+sum(is.na(gafc_scan))
+```
+
+There are `r length(unique(sops_scan$bblid))` (22) subjects with GAFC at baseline and at least 1 post-1 yr followup. 
+Looking at scores across time:
+
+``` {r gafc.plot}
+#plot longitudinal scores
+ggplot(gafc_scan, aes(x=diff_in_days, y=GAF_C, color=bblid)) +
+  geom_line() +
+  labs(title="GAFC")
+```
+
+Look at absolute change from one timepoint to the next:
+
+```{r gafc.change}
+#calculate change in GAFC scores
+gafc_change <- gafc_scan %>% 
+  group_by(bblid) %>% 
+  arrange(diff_in_days) %>%
+  mutate("gafc_diff"= GAF_C - lag(GAF_C))
+
+summary(gafc_change)
+```
+
+Negative change -> ppt's score is getting lower (i.e. symptoms worstening).
+Look at absolute change immediately pre-post 7T
+
+``` {r gafc.change.prox}
+#define baseline - scan closest to 7T
+#find smallest datediff that's >=365
+post_gafc <- gafc_scan %>%
+  group_by(bblid) %>%
+  filter(diff_in_days >= 365) %>%
+  arrange(bblid, diff_in_days) %>%
+  slice(c(1))%>% 
+  rename_with( ~ paste0(.x, "_post")) %>%
+  ungroup()
+
+#find datediff that's <365 and closest to 0
+pre_gafc <- gafc_scan %>%
+  group_by(bblid) %>%
+  filter(diff_in_days < 365) %>%
+  mutate(abs_diff_in_days=abs(diff_in_days)) %>%
+  arrange(bblid, abs_diff_in_days) %>%
+  slice(c(1)) %>% 
+  select(!c(abs_diff_in_days)) %>% 
+  rename_with( ~ paste0(.x, "_pre")) %>%
+  ungroup()
+
+#new dataframe
+proximal_gafc <- inner_join(pre_gafc, post_gafc, by = c("bblid_pre" = "bblid_post")) %>%
+  rename("bblid"="bblid_pre", "first_7t_date"="first_7t_date_post") %>%
+  select(!c(first_7t_date_pre)) %>%
+  mutate(change_gafc = (GAF_C_post - GAF_C_pre), #absolute change
+         p.change_gafc = (change_gafc/GAF_C_pre)*100) #percent change
+#calculating days between gafc timepoints
+proximal_gafc$gafc_date_diff = as.numeric(difftime(proximal_gafc$DOSIPS_post, proximal_gafc$DOSIPS_pre, units = "days"))
+
+#plot change
+ggplot(proximal_gafc, aes(x=change_gafc)) + 
+  geom_bar(color="white", fill= "darkgreen") + 
+  labs(title="Change in GAF Current Immediately Pre-Post 7T")
+
+proximal_gafc %>% select(3, 10, 17, 18) %>% summary()
+```
+
+Plotting GAF C with dx
+
+``` {r gafc.change.plot}
+#plot absolute change vs baseline GAF C
+ggplot(proximal_gafc, aes(x=change_gafc, y=GAF_C_pre, color=dx_pre)) +
+  geom_point() +
+  geom_text_repel(aes(label = bblid), max.overlaps = 30) +
+  labs(title="Change in Current GAF Over Time", x="Change (Post - Pre)", y="Baseline GAF C")
+
+#plot absolute change vs time between proximal GAF Cs
+ggplot(proximal_gafc, aes(x=gafc_date_diff, y=change_gafc, color=dx_pre)) +
+  geom_point() +
+  geom_text_repel(aes(label = bblid), max.overlaps = 30) +
+  labs(title="Change in Current GAF By Delta Time", x="Time Between GAF Assessments (Days)", y="Change GAF (Post - Pre)")
+```
+
+*Note: min value between GAF assessments is less than 1 yr (`r min(proximal_gafc$gafc_date_diff)` days). Will likely need to filter.*
+
+Looking at percent change in current GAF
+
+``` {r gafc.percent.plot}
+#plot absolute change vs baseline GAF C
+ggplot(proximal_gafc, aes(x=p.change_gafc, y=GAF_C_pre, color=dx_pre)) +
+  geom_point() +
+  geom_text_repel(aes(label = bblid), max.overlaps = 30) +
+  labs(title="Percent Change in Current GAF Over Time", x="Percent Change (Post - Pre)", y="Baseline GAF C")
+
+#plot absolute change vs time between proximal GAF Cs
+ggplot(proximal_gafc, aes(x=gafc_date_diff, y=p.change_gafc, color=dx_pre)) +
+  geom_point() +
+  geom_text_repel(aes(label = bblid), max.overlaps = 30) +
+  labs(title="Percent Change in Current GAF By Delta Time", x="Time Between GAF Assessments (Days)", y="Percent Change GAF (Post - Pre)")
+```
+
+Analysis ideas  - look at improvers vs worseners? how does that this break down by diagnosis
+
 ### GASR
-first looking at GASR data included in diagnosis_long.csv
+
+Looking at GASR data included in diagnosis_long.csv
 
 ``` {r gasr}
-#drop missing gasr
-gasr <- redcap_no22 %>% drop_na(GASR_CURRENT)
-
-#list subj with >=2 gasr scores
-multi_gasr <- gasr %>% subset(timepoint==2) %>% select(BBLID)
-#merge to filter to only subj with multiple gasr
-gasr_long <- inner_join(gasr, multi_gasr, by = c("BBLID"))
-
-#filter to first and last gasr scores for each subject
-gasr_long <- gasr_long[order(gasr_long$timepoint),] %>% group_by(BBLID) %>% slice(c(1,n()))
-
-#calculate change in GASR, save and plot
-gasr_change <- gasr_long %>% group_by(BBLID) %>% mutate("gaf_diff"= GASR_CURRENT - lag(GASR_CURRENT), BBLID=as.factor(BBLID)) %>% select(BBLID, gaf_diff) %>% na.omit 
-summary(gasr_change$gaf_diff)
-
-#append calculation of gasr to summary df
-df_sum[nrow(df_sum) + 1,] = c("multi_gasr", nrow(gasr_change), "number unique subjects with 2+ GASR values from REDCap diagnosis.csv")
-
-#plot change in gasr
-ggplot(gasr_change, aes(x=gaf_diff)) + 
-  geom_histogram(bins=25, color="white", fill= "darkgreen") + 
-  labs(title="change in GASR")
+# #drop missing gasr
+# gasr <- redcap_no22 %>% drop_na(GASR_CURRENT)
+# 
+# #list subj with >=2 gasr scores
+# multi_gasr <- gasr %>% subset(timepoint==2) %>% select(BBLID)
+# #merge to filter to only subj with multiple gasr
+# gasr_long <- inner_join(gasr, multi_gasr, by = c("BBLID"))
+# 
+# #filter to first and last gasr scores for each subject
+# gasr_long <- gasr_long[order(gasr_long$timepoint),] %>% group_by(BBLID) %>% slice(c(1,n()))
+# 
+# #calculate change in GASR, save and plot
+# gasr_change <- gasr_long %>% group_by(BBLID) %>% mutate("gaf_diff"= GASR_CURRENT - lag(GASR_CURRENT), BBLID=as.factor(BBLID)) %>% select(BBLID, gaf_diff) %>% na.omit 
+# summary(gasr_change$gaf_diff)
+# 
+# #append calculation of gasr to summary df
+# df_sum[nrow(df_sum) + 1,] = c("multi_gasr", nrow(gasr_change), "number unique subjects with 2+ GASR values from REDCap diagnosis.csv")
+# 
+# #plot change in gasr
+# ggplot(gasr_change, aes(x=gaf_diff)) + 
+#   geom_histogram(bins=25, color="white", fill= "darkgreen") + 
+#   labs(title="change in GASR")
 ```
 
-### SIPS GAFC
-
-looking through SIPS GAF current 
-
-``` {r gafc}
-#load SIPS
-sips <- read.csv("data/sips_long.csv", header = TRUE, stringsAsFactors = F, na = "")
-summary(sips)
-
-#make list of 22q subj and drop
-q22 <- subset(redcap, HSTATUS == "22q", select = BBLID) %>% unique()
-sips_no22 <- subset(sips, !(bblid %in% q22$BBLID))
-
-#drop missing gasfc
-gafc <- sips_no22 %>% drop_na(GAF_C) 
-
-#list subj with >=2 gafc scores
-multi_gafc <- gafc %>% subset(timepoint==2) %>% select(bblid)
-#merge to filter to only subj with multiple gafc
-gafc_long <- inner_join(gafc, multi_gafc, by = c("bblid"))
-
-#filter to first and last gasr scores for each subject
-gafc_long <- gafc_long[order(gafc_long$timepoint),] %>% group_by(bblid) %>% slice(c(1,n()))
-
-#calculate change in GASR, save and plot
-gafc_change <- gafc_long %>% group_by(bblid) %>% mutate("gafc_diff"= GAF_C - lag(GAF_C), BBLID=as.factor(bblid)) %>% select(bblid, gafc_diff) %>% na.omit 
-summary(gafc_change$gafc_diff)
-
-#append calculation of gasr to summary df
-df_sum[nrow(df_sum) + 1,] = c("multi_gafc", nrow(gafc_change), "number unique subjects with 2+ GAF Current values from SIPS")
-
-#plot change in gasr
-ggplot(gafc_change, aes(x=gafc_diff)) + 
-  geom_histogram(bins=25, color="white", fill= "darkgreen") + 
-  labs(title="change in GAF Current")
-```
-
-## Diagnoses
 
 ## One Big Clinical Dataset
 

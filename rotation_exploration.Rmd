@@ -238,6 +238,8 @@ levels(post_first7t$DIAGNOSIS)
 
 #append to summary df
 df_sum[nrow(df_sum) + 1,] = c("1yr_dx_earliest7t", nrow(clin365), "number unique subjects with 2+ diagnoses in PNC Goassess and/or CAPA who have a baseline dx (up to 364 d) and follow-up dx (>= 365 d) after their earliest 7T")
+
+write.csv(post_first7t, file = "subj_dx_prepost.csv")
 ```
 
 32 subjects have clinical data after their earliest 7T!
