@@ -141,7 +141,7 @@ dx_missing <- dx_scan_date %>% subset(is.na(dx), select = c(bblid, first_7t_date
 
 **There are `r sum(is.na(dx_scan_date$dx))` (24) subj who have 7T scans but are missing diagnoses from redcap/PNC!**
 
-Seem to have some data for these ppts in spreadsheets David added/demographics from 7T list - merge in to pull protocol names/numbers and dates for when they may have gotten assessments and ask David for where diagnoses may be (or just other clinical data)
+Seem to have some data for these ppts in spreadsheets David added/demographics from 7T list - reviewed with David 
 
 Proceeding for now with dx available, recoding factors for consistency between PNC and RedCap when possible:
 
@@ -176,7 +176,7 @@ Adding in demographics - will have dx from 7T list in separate column for now, s
 
 ``` {r demo}
 #recode & rename variables for clarity
-demo <- demo %>% select(-Sex_1M, -Ethnicity, -DOB)
+demo <- demo %>% select(-Sex_1M, -Ethnicity, -Age)
 demo$sex <- recode(demo$sex, "1" = "M", "2" = "F")
 
 #merge with first 7t list
@@ -218,14 +218,14 @@ sips.sops_scan$TYPE <- fct_collapse(sips.sops_scan$TYPE, "Proband" = c("Proband"
 sips.sops_scan$TYPE <- factor(sips.sops_scan$TYPE, levels = c("Combined", "Proband", "Collateral"))
 
 #group data to select correct type (defined as lowest ordered level)
-sips.sops_scan <- sips.sops_scan %>%
+sips.sops_scan.filt <- sips.sops_scan %>%
   group_by(bblid, DOSIPS) %>%
   arrange(TYPE) %>%
   slice(c(1)) %>%
   ungroup()
 
-length(unique(sips.sops_scan$bblid)) #confirm no subjects deleted
-skimr::skim(sips.sops_scan)
+length(unique(sips.sops_scan.filt$bblid)) #confirm no subjects deleted
+skimr::skim(sips.sops_scan.filt)
 ```
 
 ### S0PS
@@ -235,7 +235,7 @@ Focusing on SOPS (summing within and subscales Pos, Neg, Gen, Disorg) - seem to 
 
 ``` {r sops}
 #filter for SOPS completion
-sops_scan <- sips.sops_scan %>% 
+sops_scan <- sips.sops_scan.filt %>% 
   drop_na(P1) %>% 
   select(c(1, 7:26, 47:57)) #subset columns
 
@@ -355,13 +355,22 @@ ggplot(sops_scan, aes(x=diff_in_days, y=sops_tot, color=bblid)) +
 
 ### SIPS
 
-Pulling "SIPS" ratings number of Pos, Neg, Gen, etc items on SOPS coded as 3,4,5, or 6 depending on suffix. Not planning to use these in final analyses, but already wrote the code.
+Pulling "SIPS" ratings number of Pos, Neg, Gen, etc items on SOPS coded as 3,4,5, or 6 depending on suffix - calculating for subj that aren't already input. Not planning to use these in final analyses, but already wrote the code.
 
 ``` {r sips}
-#filter df for sips completion
-sips_scan <- dx_sips.sops_scan %>% 
-  drop_na(POS_345, POS_6, NEG_3456, GEN_3456) %>% 
-  mutate(POS_3456= rowSums(across(c(POS_345, POS_6)))) #concatenating across frequency of p sxs for consistency across subscales
+# #filter df for SOPS item completion
+# sips_scan <- dx_sips.sops_scan %>% 
+#   drop_na(POS_345, POS_6, NEG_3456, GEN_3456) %>% 
+#   mutate(POS_3456= rowSums(across(c(POS_345, POS_6)))) #concatenating across frequency of p sxs for consistency across subscales
+
+sips_calc <- sips.sops_scan.filt %>%
+  drop_na(8:26)
+#calc sips
+sips_calc$sips_pos <- apply(sips_calc[8:12], 1, function(x) length(which(x>2)))
+sips_calc$sips_neg <- apply(sips_calc[13:18], 1, function(x) length(which(x>2)))
+sips_calc$sips_dis <- apply(sips_calc[19:22], 1, function(x) length(which(x>2)))
+sips_calc$sips_gen <- apply(sips_calc[23:26], 1, function(x) length(which(x>2)))
+sips_scan <- sips_calc %>% select(1, 7, 47:61)
 
 #since dropping NA we need to refilter pre-post subj
 ##find subjects that have a baseline sops up to 364 days post-7T 
@@ -374,36 +383,39 @@ sips_scan <- subset(sips_scan, (bblid %in% clin364_sip2$bblid & bblid %in% clin3
 length(unique(sips_scan$bblid))
 ```
 
-There are `r length(unique(sips_scan$bblid))` (14) subjects with SIPS at baseline and at least 1 post-1 yr followup
+There are `r length(unique(sips_scan$bblid))` (26) subjects with SIPS at baseline and at least 1 post-1 yr followup
 
 Calculate change across time (i.e. change from one timepoint to the next):
 
 ``` {r sips.change}
-names(sips_scan)
-
 #calculate change in SIPS scores, save and plot
 sips_change <- sips_scan %>% 
   group_by(bblid) %>% 
   arrange(diff_in_days) %>%
-  mutate("pos_diff"= POS_3456 - lag(POS_3456),
-         "neg_diff"= NEG_3456 - lag(NEG_3456),
-         "gen_diff"= GEN_3456 -lag(GEN_3456)) %>%
+  mutate("pos_diff"= sips_pos - lag(sips_pos),
+         "neg_diff"= sips_neg - lag(sips_neg),
+         "gen_diff"= sips_gen -lag(sips_gen),
+         "dis_diff"= sips_dis - lag(sips_dis)) %>%
   ungroup()
 
 summary(sips_change)
 
 #plot longitudinal scores
-ggplot(sips_change, aes(x=diff_in_days, y=POS_3456, color=bblid)) +
+ggplot(sips_change, aes(x=diff_in_days, y=sips_pos, color=bblid)) +
   geom_line() +
   labs(title="SIPS Pos")
 
-ggplot(sips_change, aes(x=diff_in_days, y=NEG_3456, color=bblid)) +
+ggplot(sips_change, aes(x=diff_in_days, y=sips_neg, color=bblid)) +
   geom_line() +
   labs(title="SIPS Neg")
 
-ggplot(sips_change, aes(x=diff_in_days, y=GEN_3456, color=bblid)) +
+ggplot(sips_change, aes(x=diff_in_days, y=sips_gen, color=bblid)) +
   geom_line() +
   labs(title="SIPS Gen")
+
+ggplot(sips_change, aes(x=diff_in_days, y=sips_dis, color=bblid)) +
+  geom_line() +
+  labs(title="SIPS Dis")
 
 #plot change
 ggplot(sips_change, aes(x=pos_diff)) + 
@@ -425,7 +437,7 @@ Looking at just change immediately pre-post 7T
 #define baseline - scan closest to 7T
 #find smallest datediff that's >=365
 post <- sips_scan %>%
-  select(1, 7, 31:35, 48, 53) %>% #filter so we're not duplicating rows that wont change (demographics, 7t date, etc.)
+  select(1, 2, 13:17) %>% #filter so we're not duplicating rows that wont change (demographics, 7t date, etc.)
   group_by(bblid) %>%
   filter(diff_in_days >= 365) %>%
   arrange(bblid, diff_in_days) %>%
@@ -440,14 +452,13 @@ pre <- sips_scan %>%
   arrange(bblid, abs_diff_in_days) %>%
   slice(c(1)) %>% 
   select(!c(abs_diff_in_days)) %>% 
-  rename_at(c(7, 31:35, 48, 53), ~ paste0(.x, "_pre"))
+  rename_at(c(2, 13:17), ~ paste0(.x, "_pre"))
 
 #new dataframe
 proximal_sips <- inner_join(pre, post, by = c("bblid" = "bblid_post")) %>%
-  select(bblid, DOSIPS_pre, POS_345_pre, POS_6_pre, POS_3456_pre, NEG_3456_pre, DIS_3456_pre, GEN_3456_pre, diff_in_days_pre, dx, dx_source, dx_date, dx_diff, DOSIPS_post, POS_345_post, POS_6_post, POS_3456_post, NEG_3456_post, DIS_3456_post, GEN_3456_post, diff_in_days_post) %>%
-  mutate(change_pos = (POS_3456_post - POS_3456_pre),
-         change_neg = (NEG_3456_post - NEG_3456_pre),
-         change_gen = (GEN_3456_post - GEN_3456_pre))
+  mutate(change_pos = (sips_pos_post - sips_pos_pre),
+         change_neg = (sips_neg_post - sips_neg_pre),
+         change_gen = (sips_gen_post - sips_gen_pre))
 
 #plot change
 ggplot(proximal_sips, aes(x=change_pos)) + 
@@ -609,7 +620,7 @@ ggplot(proximal_prime, aes(x=prime_date_diff, y=change_prime_sum, color=dx)) +
 Looking through SIPS GAF current 
 
 ``` {r gafc, echo=FALSE}
-gafc_scan <- dx_sips.sops_scan %>% drop_na(GAF_C) %>%
+gafc_scan <- sips.sops_scan.filt %>% drop_na(GAF_C) %>%
   select(bblid, DOSIPS, GAF_C, first_7t_date, diff_in_days, dx, dx_source, dx_date, dx_diff)
 
 #since dropping NA we need to refilter pre-post subj
@@ -839,9 +850,9 @@ ggplot(proximal_gasr, aes(x=gasr_date_diff, y=change_gasr, color=dx)) +
   labs(title="Change in GASR By Delta Time", x="Time Between GASR Assessments (Days)", y="Change GASR (Post - Pre)")
 ```
 
-*Note: min value between GAF assessments is less than 1 yr (`r min(proximal_gafc$gafc_date_diff)` days). Will likely need to filter.*
+*Note: min value between GASR assessments is less than 1 yr (`r min(proximal_gafc$gafc_date_diff)` days). Will likely need to filter.*
 
-Looking at percent change in current GAF
+Looking at percent change in GASR
 
 ``` {r gasr.percent.plot}
 #plot absolute change vs baseline GASR
@@ -866,6 +877,7 @@ Merge additional clinical info (eg added by David) into our sample to potentiall
 Merging using `dx_scan_date` as our base, since it contains the 7t list & all diagnoses with 22q subj removed. 
 * leave SYRP for 2nd to last since it has overlapping assessments with other dfs from Kosha (will need to re-rename prime cols)
 * merge demo *actually* last and not by date so info gets applied to ALL timepoints
+* calc diff_assess from 7t to date_assess
 
 ``` {r big.merge}
 #making sure we have what we need/expect
@@ -887,14 +899,43 @@ cgas_clean <- cgas %>%
   subset(bblid %in% all_subj) #make sure correct subj list
 #merge
 merge_1 <- full_join(merge_base, cgas_clean, by = c("bblid", "date_assess"))
-length(unique(merge_2$bblid)) #should always have 132 subj
+length(unique(merge_1$bblid)) #should always have 132 subj
 
 #now sips clean & merge
+sips_clean <- sips_calc %>% select(1, 7:27, 58:61) %>% #sips_calc already filtered for correct source (proband>collateral) for each timepoint, frequency calculated
+  rename(date_assess = DOSIPS) %>%
+  subset(bblid %in% all_subj) #make sure correct subj list
+#merge
+merge_2 <- full_join(merge_1, sips_clean, by = c("bblid", "date_assess"))
+length(unique(merge_2$bblid)) #should always have 132 subj
+
+#prime clean and merge (will add rest of syrp later)
+names(prime_p) #version selected for correct source (proband>collateral) for each timepoint, merged prime.csv and syrp primes
+prime_clean <- prime_p %>% rename(date_assess = date, prime_source=source)%>%
+  subset(bblid %in% all_subj) #make sure correct subj list
+#calculate prime_scores
+prime_clean$count.5 <- apply(prime_clean[4:15], 1, function(x) length(which(x==5)))
+prime_clean$count.6 <- apply(prime_clean[4:15], 1, function(x) length(which(x==6)))
+prime_clean$prime_score <- rowSums(cbind(prime_clean$count.5, prime_clean$count.6))
+prime_clean <- prime_clean %>% select(-count.5, -count.6) #remove count.5 and count.6
+#merge
+merge_3 <- full_join(merge_2, prime_clean, by = c("bblid", "date_assess"))
+length(unique(merge_3$bblid)) #should always have 132 subj
+
+
+#clean syrp and merge
+syrp_clean <- syrp %>% rename(date_assess=date) %>%
+  select(!c(13:37)) %>% #drop PRIME ~ maybe clean this up more later as well, lots of columns!
+  subset(bblid %in% all_subj) #make sure correct subj list
+#merge
+merge_4 <- full_join(merge_3, syrp_clean, by = c("bblid", "date_assess"))
+length(unique(merge_4$bblid)) #should always have 132 subj
 
 # #try merging in demo first since it's relatively small
-# summary(demo)
-# merge_1 <- left_join(merge_base, demo, by = c("bblid" = "BBLID"))
-# length(unique(merge_1$bblid)) #should always have 132 subj
+summary(demo)
+demo_clean <- demo %>% subset(BBLID %in% all_subj) #make sure correct subj list
+merge_5 <- inner_join(demo_clean, merge_4, by = c("BBLID" = "bblid"))
+length(unique(merge_5$BBLID)) #should always have 132 subj
 ```
 
 
