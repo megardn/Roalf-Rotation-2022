@@ -228,7 +228,7 @@ length(unique(sips.sops_scan.filt$bblid)) #confirm no subjects deleted
 skimr::skim(sips.sops_scan.filt)
 ```
 
-### S0PS
+### SOPS
 
 SOPS seems to be the 12 item components of SIPS (which are overall ratings of severity).
 Focusing on SOPS (summing within and subscales Pos, Neg, Gen, Disorg) - seem to be valid scoring based on ct.gov. 
@@ -876,38 +876,26 @@ Merge additional clinical info (eg added by David) into our sample to potentiall
 
 Merging using `dx_scan_date` as our base, since it contains the 7t list & all diagnoses with 22q subj removed. 
 * leave SYRP for 2nd to last since it has overlapping assessments with other dfs from Kosha (will need to re-rename prime cols)
-* merge demo *actually* last and not by date so info gets applied to ALL timepoints
+* merge demo & dx_scan_date last and not by date so info gets applied to ALL timepoints
 * calc diff_assess from 7t to date_assess
 
 ``` {r big.merge}
-#making sure we have what we need/expect
-str(dx_scan_date)
-length(unique(dx_scan_date$bblid))
-
 #list all subj so we can make sure all data is 7t subj with no 22q ~ then we can just use full joins
 all_subj <- unique(dx_scan_date$bblid)
 
-#renaming df and cols for compatibility across assessments
-merge_base <- dx_scan_date %>% rename(date_assess = dx_date, diff_assess = dx_diff)
-
-#clean and merge in cgas
+#clean cgas
 summary(cgas)
 cgas_clean <- cgas %>%
   mutate(bblid=as.factor(bblid),
          date_assess=as.Date(date, format="%Y-%m-%d")) %>% #clean values
   select(2, 5:8,20) %>% # select cols
   subset(bblid %in% all_subj) #make sure correct subj list
-#merge
-merge_1 <- full_join(merge_base, cgas_clean, by = c("bblid", "date_assess"))
-length(unique(merge_1$bblid)) #should always have 132 subj
-
 #now sips clean & merge
 sips_clean <- sips_calc %>% select(1, 7:27, 58:61) %>% #sips_calc already filtered for correct source (proband>collateral) for each timepoint, frequency calculated
   rename(date_assess = DOSIPS) %>%
   subset(bblid %in% all_subj) #make sure correct subj list
 #merge
-merge_2 <- full_join(merge_1, sips_clean, by = c("bblid", "date_assess"))
-length(unique(merge_2$bblid)) #should always have 132 subj
+merge_1 <- full_join(sips_clean, cgas_clean, by = c("bblid", "date_assess"))
 
 #prime clean and merge (will add rest of syrp later)
 names(prime_p) #version selected for correct source (proband>collateral) for each timepoint, merged prime.csv and syrp primes
@@ -919,25 +907,43 @@ prime_clean$count.6 <- apply(prime_clean[4:15], 1, function(x) length(which(x==6
 prime_clean$prime_score <- rowSums(cbind(prime_clean$count.5, prime_clean$count.6))
 prime_clean <- prime_clean %>% select(-count.5, -count.6) #remove count.5 and count.6
 #merge
-merge_3 <- full_join(merge_2, prime_clean, by = c("bblid", "date_assess"))
-length(unique(merge_3$bblid)) #should always have 132 subj
+merge_2 <- full_join(merge_1, prime_clean, by = c("bblid", "date_assess"))
 
+#clean dx and merge
+all_dx_clean <- all_dx %>% rename(date_assess=dx_date) %>%
+  mutate(bblid = as.factor(bblid)) %>%
+  subset(bblid %in% all_subj) #make sure correct subj list
+#merge
+merge_3 <-full_join(merge_2, all_dx_clean, by = c("bblid", "date_assess"))
 
-#clean syrp and merge
+#clean syrp and merge ~ several proband assessments on same day, how to filter by admin_event?
 syrp_clean <- syrp %>% rename(date_assess=date) %>%
   select(!c(13:37)) %>% #drop PRIME ~ maybe clean this up more later as well, lots of columns!
   subset(bblid %in% all_subj) #make sure correct subj list
 #merge
 merge_4 <- full_join(merge_3, syrp_clean, by = c("bblid", "date_assess"))
-length(unique(merge_4$bblid)) #should always have 132 subj
+length(unique(merge_4$bblid)) 
 
-# #try merging in demo first since it's relatively small
-summary(demo)
-demo_clean <- demo %>% subset(BBLID %in% all_subj) #make sure correct subj list
-merge_5 <- inner_join(demo_clean, merge_4, by = c("BBLID" = "bblid"))
-length(unique(merge_5$BBLID)) #should always have 132 subj
+#merge demographics and first scan date since they'll get applied to all clinical timepoints
+first7t <- first7t %>% mutate(BBLID=as.factor(BBLID))
+merge_demo.scan <- full_join(demo, first7t, by = c("BBLID")) %>%
+  subset(BBLID %in% all_subj) #make sure correct subj list
+
+#merge demo & first scan into clinical data
+all_data <- full_join(merge_demo.scan, merge_4, by = c("BBLID" = "bblid"))
+length(unique(all_data$BBLID)) #should always have 132 subj
+
+#also making a version withough sryp because it has multiple proband assessments per day/complicates
+all_data_nosyrp <- full_join(merge_demo.scan, merge_3, by = c("BBLID" = "bblid"))
+length(unique(all_data_nosyrp$BBLID)) #should always have 132 subj
+#calculate datediff and filter for >1 yr pre-7t
+all_data_nosyrp$date_diff = as.numeric(difftime(all_data_nosyrp$date_assess, all_data_nosyrp$first_7t_date, units = "days"))
+all_data_nosyrp <- all_data_nosyrp %>% subset(date_diff >= -365)
+length(unique(all_data_nosyrp$BBLID))
 ```
 
+There are `r length(unique(all_data_nosyrp$BBLID))` (122) subjects who have any kind of potentially usable clinical data (e.g. not from >1 yr prior to scan).
+`
 
 ## Appendix: Missing Diagnoses
 
