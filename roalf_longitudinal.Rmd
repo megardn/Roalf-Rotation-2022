@@ -22,7 +22,7 @@ pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate)
 
 Find the first 7T each participant is done to maximize length of potential follow-ups. Using glucest subject list extracted from .xls (list from David 1/13/22).
 
-*Note: doesn't include scans past June 2019. Will need to update but probably won't add many subj. with 1 yr post-7T clinical timepoints*
+*Note: doesn't include scans past June 2019. Will need to update but probably won't add many subj. with 1 yr post-7T clinical timepoints. Look at slack message from Arianna with subj she's scanned and their latest clin assess to see if already included*
 
 ``` {r load.7t, echo=FALSE}
 #start with complete glucest date list - clean up and compare X7T_date and ONM_7T_date
@@ -43,7 +43,7 @@ first7t <- first7t %>% mutate(first_7t_date = pmin(X7T_date, ONM_7T_date, na.rm=
 ## Load All Data
 
 *Notes* 
-* HOW TO ID 22Q PPTS FROM PNC FOR REMOVAL?!?!
+* Per David, no PNC subj should be 22q - no need to worry about filtering beyond those ID'd by RedCap
 * no date available for PNC dx, arbitrarily picking Jan 1 2000
 
 ```{r load.clinical, echo=FALSE}
@@ -53,8 +53,6 @@ goassess <- read.csv("/Users/megardn/ImageData/PMACS_remote/clinical/goassess_di
         dx_source = "goassess",
         dx_date = as.Date("2000-01-01")) %>% #no date available for PNC dx, arbitrarily picking Jan 1 2000
         select (bblid, dx, dx_source, dx_date)
-
-### HOW TO ID 22Q PPTS FROM PNC FOR REMOVAL?!?!
 
 #load RedCap diagnosis data
 redcap <- read.csv("data/diagnosis_long.csv", header = TRUE, stringsAsFactors = F, na = "") %>% 
@@ -190,6 +188,8 @@ dx_baseline <- dx_baseline %>% select(-DOB) #drop DOB since we don't need that P
 ## SIPS & SOPS
 
 Some subjects have multiple assessments on one day (one from proband one from family, etc); need to be sure to pick only `TYPE == "COMBINED"` per discussion with David. If no combined, pick proband.
+
+*ADD SIPS DATA FROM GOASSESS!*
 
 ``` {r sips&sops}
 #SIPS + first 7t and dx
@@ -634,6 +634,8 @@ gafc_scan <- subset(gafc_scan, (bblid %in% clin365_gafc$bblid & bblid %in% clin3
 length(unique(gafc_scan$bblid))
 sum(is.na(gafc_scan))
 ```
+
+**discordant subj counts ~ figure this out!!!*
 
 There are `r length(unique(sops_scan$bblid))` (22) subjects with GAFC at baseline and at least 1 post-1 yr followup. 
 Looking at scores across time:
