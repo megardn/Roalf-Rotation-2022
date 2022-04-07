@@ -22,7 +22,7 @@ pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate)
 
 Find the first 7T each participant is done to maximize length of potential follow-ups. Using glucest subject list extracted from .xls (list from David 1/13/22).
 
-*Note: doesn't include scans past June 2019. Will need to update but probably won't add many subj. with 1 yr post-7T clinical timepoints. Look at slack message from Arianna with subj she's scanned and their latest clin assess to see if already included*
+*Note: doesn't include scans past June 2019. Will need to update but probably won't add many subj. with 1 yr post-7T clinical timepoints. TO DO: Look at slack message from Arianna with subj she's scanned and their latest clin assess to see if already included*
 
 ``` {r load.7t, echo=FALSE}
 #start with complete glucest date list - clean up and compare X7T_date and ONM_7T_date
@@ -45,6 +45,11 @@ first7t <- first7t %>% mutate(first_7t_date = pmin(X7T_date, ONM_7T_date, na.rm=
 *Notes* 
 * Per David, no PNC subj should be 22q - no need to worry about filtering beyond those ID'd by RedCap
 * no date available for PNC dx, arbitrarily picking Jan 1 2000
+
+*TO DO* 
++ get actual PNC clinical dates
++ filter SYRP datasets to keep pre and/or self-report when subj has multiple proband assessments on the same day
++ get medication info
 
 ```{r load.clinical, echo=FALSE}
 #load PNC data
@@ -137,7 +142,7 @@ dx_missing <- dx_scan_date %>% subset(is.na(dx), select = c(bblid, first_7t_date
 # write.csv(dx_missing, "missing_dx.csv", row.names=FALSE)
 ```
 
-**There are `r sum(is.na(dx_scan_date$dx))` (24) subj who have 7T scans but are missing diagnoses from redcap/PNC!**
+There are `r sum(is.na(dx_scan_date$dx))` (24) subj who have 7T scans but are missing diagnoses from redcap/PNC!
 
 Seem to have some data for these ppts in spreadsheets David added/demographics from 7T list - reviewed with David 
 
@@ -189,7 +194,7 @@ dx_baseline <- dx_baseline %>% select(-DOB) #drop DOB since we don't need that P
 
 Some subjects have multiple assessments on one day (one from proband one from family, etc); need to be sure to pick only `TYPE == "COMBINED"` per discussion with David. If no combined, pick proband.
 
-*ADD SIPS DATA FROM GOASSESS!*
+*TO DO: ADD SIPS DATA FROM GOASSESS!*
 
 ``` {r sips&sops}
 #SIPS + first 7t and dx
@@ -547,7 +552,7 @@ summary(prime_scan)
 
 There are `r length(unique(prime_scan$bblid))` (26) subjects with PRIME scores at baseline and at least 1 post-1 yr followup. 
 
-Look at just change immediately pre-post 7T. **Check calculations for percent change make sense!**
+Look at just change immediately pre-post 7T. **TO DO: Check calculations for percent change make sense!**
 
 ``` {r prime.change.prox}
 #define baseline - scan closest to 7T
@@ -935,7 +940,7 @@ merge_demo.scan <- full_join(demo, first7t, by = c("BBLID")) %>%
 all_data <- full_join(merge_demo.scan, merge_4, by = c("BBLID" = "bblid"))
 length(unique(all_data$BBLID)) #should always have 132 subj
 
-#also making a version withough sryp because it has multiple proband assessments per day/complicates
+#also making a version without sryp because it has multiple proband assessments per day/complicates
 all_data_nosyrp <- full_join(merge_demo.scan, merge_3, by = c("BBLID" = "bblid"))
 length(unique(all_data_nosyrp$BBLID)) #should always have 132 subj
 #calculate datediff and filter for >1 yr pre-7t
@@ -945,7 +950,7 @@ length(unique(all_data_nosyrp$BBLID))
 ```
 
 There are `r length(unique(all_data_nosyrp$BBLID))` (122) subjects who have any kind of potentially usable clinical data (e.g. not from >1 yr prior to scan).
-`
+
 
 ## Appendix: Missing Diagnoses
 
