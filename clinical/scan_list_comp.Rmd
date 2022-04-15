@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table)
 ```
 
 ## Load & Clean Lists
@@ -61,7 +61,14 @@ glu_ar.long <- gather(glu_ar, scanner, "7T_date", base_7t:follow_7t, factor_key=
 ```
 
 ``` {r aging}
-# read in 7T list from Heather Aging study (pulled April 2022)
+glu_age <- read.csv("data/7tglucestage_scans.csv", header=T) # read in 7T list from Heather Aging study (pulled April 2022)
+
+#clean up
+glu_age <- glu_age %>%
+  transmute(BBLID=as.character(BBLID),
+         "7T_date" = as.Date(DOSCAN,format ="%m/%d/%y"),
+         scanner = as.factor("Terra"),
+         SCANID=as.character(SCANID))
 ```
 
 ## Full Join
@@ -71,7 +78,11 @@ glu_ar.long <- gather(glu_ar, scanner, "7T_date", base_7t:follow_7t, factor_key=
 long1 <- merge(x=glu_old.long, y=glu_ar.long,by=c("BBLID", "7T_date", "scanner"),all=TRUE)
 str(long1)
 
-all_7t.long <- long1
+#join in Age study scan list
+all_7t.long <- merge(x=long1, y=glu_age, by=c("BBLID", "7T_date", "scanner"), all=TRUE)
+str(all_7t.long)
+
+dup <- duplicated(all_7t.long[,1:2]) #no duplicates!
 ```
 
 ## Wide
@@ -79,13 +90,17 @@ all_7t.long <- long1
 ``` {r}
 all_7t.count <- all_7t.long %>%
   group_by(BBLID) %>%
+  arrange(all_7t.long$"7T_date") %>%
   mutate(count = as.character(row_number(BBLID))) %>%
   ungroup() # add counts
-all_7t.wide <- pivot_wider(all_7t.count, id_cols=BBLID, names_from = count, values_from="7T_date") # pivot
+all_7t.wide <- pivot_wider(all_7t.count, id_cols=BBLID, names_from = count, values_from=c("7T_date", scanner, SCANID)) # pivot
 colnames(all_7t.wide)[2:ncol(all_7t.wide)] <- paste("scan", colnames(all_7t.wide[,c(2:ncol(all_7t.wide))]), sep = "_") #rename cols
 
 #write final list to csv
 write.csv(all_7t.wide, "data/all_7T_april22.csv", row.names=FALSE, na="")
+save(all_7t.wide, file="data/all_7T_april22.Rdata")
+
+n_distinct(all_7t.wide$BBLID)
 ```
 
 ## First 7T
@@ -101,6 +116,30 @@ nrow(first_7T)
 
 #write final list to csv
 write.csv(first_7T, "data/first_7T_april22.csv", row.names=FALSE, na="")
+```
+
+
+## Adding SIPS
+
+```{r}
+sips <- fread("data/oracle_sips_all.csv", na.strings="null", header=TRUE)
+head(sips)
+skim(sips)
+
+#clean up
+sips <- sips %>% select(-SIPS_SOURCEID, -SOURCE_PROJECT)
+```
+
+merge into scan list
+
+```{r}
+sips.7t <- merge(x=all_7t.wide, y=sips, by="BBLID", all.x=TRUE)
+head(sips.7t)
+
+n_distinct(sips.7t$BBLID)
+
+#add date_diff column
+sips.7t$diff_in_days = as.numeric(difftime(sips.7t$DOSIPS, sips_date$first_7t_date, units = "days"))
 ```
 
 
