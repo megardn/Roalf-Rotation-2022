@@ -326,6 +326,8 @@ scanlist <- sips.sops_stuff %>% select(BBLID,scan_7T_date_1,scan_scanner_1,scan_
 write_csv(scanlist, file = "data/SCANS-TO-ANALYZE.csv")
 ```
 
+TO DO- work from here!
+
 ### SOPS
 
 SOPS seems to be the 12 item components of SIPS (which are overall ratings of severity).
