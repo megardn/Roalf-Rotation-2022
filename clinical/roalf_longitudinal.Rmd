@@ -260,23 +260,36 @@ sip.post.scan1 <-  which(sips.sops_scan.filt$diff_in_days1 > 364)
 sip.post.scan2 <-  which(sips.sops_scan.filt$diff_in_days2 > 364)
 sip.post.scan3 <-  which(sips.sops_scan.filt$diff_in_days3 > 364)
 
-#labe
+#label SIPS relative to each scan
+sips.sops_scan.labeled <- sips.sops_scan.filt %>%
+  mutate(scan1.time = case_when(row_number() %in% sip.pre.scan1 ~ "base", 
+                                row_number() %in% sip.post.scan1 ~ "end"),
+         scan2.time = case_when(row_number() %in% sip.pre.scan2 ~ "base", 
+                                row_number() %in% sip.post.scan2 ~ "end"),
+         scan3.time = case_when(row_number() %in% sip.pre.scan3 ~ "base", 
+                                row_number() %in% sip.post.scan3 ~ "end"),
+         bblid_scan = paste(as.character(BBLID), as.character(scan_7T_date_1))) %>% #making unique ID - temporary until i pull scan ids
+  filter_at(vars(scan1.time, scan2.time, scan3.time), any_vars(!is.na(.)))
 
-genes %>%
-mutate(Sig = ifelse(row_number() %in% sig, "YES", "NO"))
+#label which scans should be use for each ppt
+scan1_b <- as.integer(sips.sops_scan.labeled$BBLID[sip.pre.scan1])
+scan2_b <- as.integer(sips.sops_scan.labeled$BBLID[sip.pre.scan2])
+scan3_b <- as.integer(sips.sops_scan.labeled$BBLID[sip.pre.scan3])
+scan1_f <- as.integer(sips.sops_scan.labeled$BBLID[sip.post.scan1])
+scan2_f <- as.integer(sips.sops_scan.labeled$BBLID[sip.post.scan2])
+scan3_f <- as.integer(sips.sops_scan.labeled$BBLID[sip.post.scan3])
 
-scan1_b <- as.integer(sips.sops_scan.filt$BBLID[sip.pre.scan1])
-scan2_b <- as.integer(sips.sops_scan.filt$BBLID[sip.pre.scan2])
-scan3_b <- as.integer(sips.sops_scan.filt$BBLID[sip.pre.scan3])
-scan1_f <- as.integer(sips.sops_scan.filt$BBLID[sip.post.scan1])
-scan2_f <- as.integer(sips.sops_scan.filt$BBLID[sip.post.scan2])
-scan3_f <- as.integer(sips.sops_scan.filt$BBLID[sip.post.scan3])
+sips.sops_scan.labeled$use_scan1 <- (as.integer(sips.sops_scan.labeled$BBLID) %in% scan1_b & as.integer(sips.sops_scan.labeled$BBLID) %in% scan1_f)
+sips.sops_scan.labeled$use_scan2 <- (as.integer(sips.sops_scan.labeled$BBLID) %in% scan2_b & as.integer(sips.sops_scan.labeled$BBLID) %in% scan2_f)
+sips.sops_scan.labeled$use_scan3 <- (as.integer(sips.sops_scan.labeled$BBLID) %in% scan3_b & as.integer(sips.sops_scan.labeled$BBLID) %in% scan3_f)
 
-sips.sops_scan.filt$use_scan1 <- (as.integer(sips.sops_scan.filt$BBLID) %in% scan1_b & as.integer(sips.sops_scan.filt$BBLID) %in% scan1_f)
-sips.sops_scan.filt$use_scan2 <- (as.integer(sips.sops_scan.filt$BBLID) %in% scan2_b & as.integer(sips.sops_scan.filt$BBLID) %in% scan2_f)
-sips.sops_scan.filt$use_scan3 <- (as.integer(sips.sops_scan.filt$BBLID) %in% scan3_b & as.integer(sips.sops_scan.filt$BBLID) %in% scan3_f)
+sips.sops_stuff <- subset(sips.sops_scan.labeled, (use_scan2==TRUE | use_scan1==TRUE |use_scan3==TRUE)) #basically follow-up scans add no participants :(
 
-sips.sops_stuff <- subset(sips.sops_scan.filt, (use_scan2==TRUE | use_scan1==TRUE |use_scan3==TRUE)) #basically follow-up scans add no participants :(
+#only keep clinical values that match a scan
+sips.sops.labeled <- sips.sops_stuff %>%
+  filter((use_scan1==TRUE & (!is.na(scan1.time)))|
+         (use_scan2==TRUE & (!is.na(scan2.time)))| 
+         (use_scan3==TRUE & (!is.na(scan3.time))))
 
 # sorting <- sips.sops_scan.filt %>% select(BBLID,DOSIPS,scan1_tp,scan2_tp,scan3_tp) %>%
 #   group_by(BBLID) %>%
@@ -307,16 +320,16 @@ sips.sops_stuff <- subset(sips.sops_scan.filt, (use_scan2==TRUE | use_scan1==TRU
 # #filter df on date
 # sips.sops_scan.filt <- subset(sips.sops_scan.filt, (BBLID %in% clin365_sip$BBLID & BBLID %in% clin364_sip$BBLID))
 
-length(unique(sips.sops_stuff$BBLID))
+length(unique(sips.sops.labeled$BBLID))
 
 #plot for fun
-ggplot(sips.sops_stuff, aes(x=diff_in_days1, y=BBLID)) + 
+ggplot(sips.sops.labeled, aes(x=diff_in_days1, y=BBLID)) + 
   geom_point() +
   geom_vline(xintercept=365) +
   labs(title="SOPS Relative to First 7T Scan", x="Days from 7T Scan") +
   theme(legend.position = "none")
 
-skim(sips.sops_stuff)
+skim(sips.sops.labeled)
 ```
 
 Note - adding follow-up scans doesn't actually give more subjects, but i'll plan on processing scan1 and 2 for the subj who have `use_scan2==TRUE` just in case there are data quality problems with scan 1.
@@ -328,7 +341,7 @@ analysis ideas from jake:
 
 ```{r}
 #return scanlist
-scanlist <- sips.sops_stuff %>% select(BBLID,scan_7T_date_1,scan_scanner_1,scan_SCANID_1,use_scan1, scan_7T_date_2,scan_scanner_2,scan_SCANID_2,use_scan2) %>%
+scanlist <- sips.sops.labeled %>% select(BBLID,scan_7T_date_1,scan_scanner_1,scan_SCANID_1,use_scan1, scan_7T_date_2,scan_scanner_2,scan_SCANID_2,use_scan2) %>%
   distinct() %>%
   rename(date7t_1=scan_7T_date_1,
          date7t_2=scan_7T_date_2,
@@ -351,8 +364,8 @@ SOPS seems to be the 12 item components of SIPS (which are overall ratings of se
 Focusing on SOPS (summing within and subscales Pos, Neg, Gen, Disorg) - seem to be valid scoring based on ct.gov. 
 
 ``` {r sops}
-#sum(is.na(sips.sops_scan.filt[7:25]))#see missing sops scores
-sops_scan <- sips.sops_stuff %>% mutate(sops_p = rowSums(across(plist), na.rm=F),
+#calculate sops scores
+sops_scan <- sips.sops.labeled %>% mutate(sops_p = rowSums(across(plist), na.rm=F),
                                   sops_n = rowSums(across(nlist), na.rm=F),
                                   sops_d = rowSums(across(dlist), na.rm=F),
                                   sops_g = rowSums(across(glist), na.rm=F),
@@ -370,6 +383,30 @@ ggplot(sops_scan, aes(x=diff_in_days1, y=BBLID, color=sops_tot)) +
 length(unique(sops_scan$BBLID))
 ```
 
+
+Outputting toy dataset to send for Taki for advice in modeling
+```{r}
+toy <- sops_scan %>%
+  arrange(BBLID) %>%
+  select(BBLID, bblid_scan, DOSIPS, scan_7T_date_1, age_scan, diff_in_days1, sops_p, sops_n, sops_d, sops_g, sops_tot, scan1.time)
+summary(toy)
+#if ppt has multiple baseline scans, just select the one closest to scan date
+toy.filt <- toy %>%
+  group_by(bblid_scan, scan1.time) %>%
+  arrange(abs(diff_in_days1)) %>%
+  mutate(row = row_number()) %>%
+  filter(!(scan1.time=="base" & row > 1)) %>%
+  mutate(scan1.time=paste(scan1.time,as.character(row), sep=".")) %>%
+  select(-row)%>%
+  ungroup()
+
+toy_wide <- pivot_wider(toy.filt, id_cols=c(BBLID, bblid_scan, scan_7T_date_1, age_scan), names_from = scan1.time, values_from=c(DOSIPS, sops_p, sops_n, sops_d, sops_g, sops_tot, diff_in_days1)) %>%
+  arrange(BBLID) %>%
+  head(.,10) %>%
+  select(where(~!all(is.na(.x))))
+
+write.csv(toy_wide, "data/toy_sops_wide.csv", row.names=FALSE, na="")
+```
 
 Looking just at change immediately pre-post 7T:
 
