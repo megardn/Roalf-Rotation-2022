@@ -15,7 +15,7 @@ load packages
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, data.table)
 ```
 
 ## 7T dates
@@ -146,7 +146,7 @@ dx_scan_date$dx <- fct_collapse(dx_scan_date$dx, "healthy" = c("noDSMdx", "TD"),
                                 "other_dx" = c("OP", "other"),
                                 "psych_spect" = c("psy", "PS", "pro")) #recode factors
 
-#make new df with only baseline dx (closest to 7T)
+#make new df with only baseline dx (closest to 7T) adding dx Arianna pulled from oracle
 #calc diff (negative values -> dx before 7t)
 dx_scan_date$dx_diff = as.numeric(difftime(dx_scan_date$dx_date, dx_scan_date$scan_7T_date_1, units = "days"))
 #select one dx per subject with date closest to &t
@@ -199,8 +199,19 @@ sips_date <- subset(sips_date, diff_in_days1 >= -365)
 length(unique(sips_date$BBLID)) #no subj lost
 min(sips_date$diff_in_days1) #confirm
 
+#list sops items
+plist <- c("P1", "P2", "P3", "P4", "P5")
+nlist <- c("N1", "N2", "N3", "N4", "N5", "N6")
+dlist <- c("D1", "D2", "D3", "D4")
+glist <- c("G1", "G2", "G3", "G4")
+sops.item.list <- c(plist, nlist, dlist, glist)
+
+#drop missing sops items
+sips_date.filt <- sips_date %>% drop_na(c(sops.item.list))
+#sum(is.na(sips_date.filt[,c(sops.item.list)]))
+
 #if subj has more than one assessment for same day, select Combined 
-sips.sops_scan <- sips_date %>% mutate(TYPE = as.factor(TYPE))
+sips.sops_scan <- sips_date.filt %>% mutate(TYPE = as.factor(TYPE))
 levels(sips.sops_scan$TYPE) 
 sips.sops_scan$TYPE <- fct_collapse(sips.sops_scan$TYPE, "Proband" = c("Proband", "proband", "P", "FP", "IP"), "Combined"=c("Combined", "FPC")) #combine all proband
 sips.sops_scan$TYPE <- factor(sips.sops_scan$TYPE, levels = c("Combined", "Proband", "Collateral"))
@@ -241,26 +252,31 @@ points(sips.sops_scan.filt$scan_7T_date_3, sips.sops_scan.filt$BBLID, col='blue'
 # ##find subjects that have a followup sips sops >365 days post-7T 
 # clin365_sip1 <- sips.sops_scan.filt %>% subset(diff_in_days1 >= 365, select = BBLID) %>% unique()
 
-clin364_sip1 <-  which(sips.sops_scan.filt$diff_in_days1 <= 364)
-clin364_sip2 <-  which(sips.sops_scan.filt$diff_in_days2 <= 364 & sips.sops_scan.filt$diff_in_days2 >= -365)
-clin364_sip3 <-  which(sips.sops_scan.filt$diff_in_days3 <= 364 & sips.sops_scan.filt$diff_in_days3 >= -365)
+sip.pre.scan1 <-  which(sips.sops_scan.filt$diff_in_days1 <= 364)
+sip.pre.scan2 <-  which(sips.sops_scan.filt$diff_in_days2 <= 364 & sips.sops_scan.filt$diff_in_days2 >= -365)
+sip.pre.scan3 <-  which(sips.sops_scan.filt$diff_in_days3 <= 364 & sips.sops_scan.filt$diff_in_days3 >= -365)
 #find subjects that have a followup sips sops >365 days post-7T 
-clin365_sip1 <-  which(sips.sops_scan.filt$diff_in_days1 > 364)
-clin365_sip2 <-  which(sips.sops_scan.filt$diff_in_days2 > 364)
-clin365_sip3 <-  which(sips.sops_scan.filt$diff_in_days3 > 364)
-scan1_b <- as.integer(sips.sops_scan.filt$BBLID[clin364_sip1])
-scan2_b <- as.integer(sips.sops_scan.filt$BBLID[clin364_sip2])
-scan3_b <- as.integer(sips.sops_scan.filt$BBLID[clin364_sip3])
-scan1_f <- as.integer(sips.sops_scan.filt$BBLID[clin365_sip1])
-scan2_f <- as.integer(sips.sops_scan.filt$BBLID[clin365_sip2])
-scan3_f <- as.integer(sips.sops_scan.filt$BBLID[clin365_sip3])
+sip.post.scan1 <-  which(sips.sops_scan.filt$diff_in_days1 > 364)
+sip.post.scan2 <-  which(sips.sops_scan.filt$diff_in_days2 > 364)
+sip.post.scan3 <-  which(sips.sops_scan.filt$diff_in_days3 > 364)
+
+#labe
+
+genes %>%
+mutate(Sig = ifelse(row_number() %in% sig, "YES", "NO"))
+
+scan1_b <- as.integer(sips.sops_scan.filt$BBLID[sip.pre.scan1])
+scan2_b <- as.integer(sips.sops_scan.filt$BBLID[sip.pre.scan2])
+scan3_b <- as.integer(sips.sops_scan.filt$BBLID[sip.pre.scan3])
+scan1_f <- as.integer(sips.sops_scan.filt$BBLID[sip.post.scan1])
+scan2_f <- as.integer(sips.sops_scan.filt$BBLID[sip.post.scan2])
+scan3_f <- as.integer(sips.sops_scan.filt$BBLID[sip.post.scan3])
 
 sips.sops_scan.filt$use_scan1 <- (as.integer(sips.sops_scan.filt$BBLID) %in% scan1_b & as.integer(sips.sops_scan.filt$BBLID) %in% scan1_f)
 sips.sops_scan.filt$use_scan2 <- (as.integer(sips.sops_scan.filt$BBLID) %in% scan2_b & as.integer(sips.sops_scan.filt$BBLID) %in% scan2_f)
 sips.sops_scan.filt$use_scan3 <- (as.integer(sips.sops_scan.filt$BBLID) %in% scan3_b & as.integer(sips.sops_scan.filt$BBLID) %in% scan3_f)
 
 sips.sops_stuff <- subset(sips.sops_scan.filt, (use_scan2==TRUE | use_scan1==TRUE |use_scan3==TRUE)) #basically follow-up scans add no participants :(
-
 
 # sorting <- sips.sops_scan.filt %>% select(BBLID,DOSIPS,scan1_tp,scan2_tp,scan3_tp) %>%
 #   group_by(BBLID) %>%
@@ -299,6 +315,8 @@ ggplot(sips.sops_stuff, aes(x=diff_in_days1, y=BBLID)) +
   geom_vline(xintercept=365) +
   labs(title="SOPS Relative to First 7T Scan", x="Days from 7T Scan") +
   theme(legend.position = "none")
+
+skim(sips.sops_stuff)
 ```
 
 Note - adding follow-up scans doesn't actually give more subjects, but i'll plan on processing scan1 and 2 for the subj who have `use_scan2==TRUE` just in case there are data quality problems with scan 1.
@@ -326,7 +344,6 @@ scanlist <- sips.sops_stuff %>% select(BBLID,scan_7T_date_1,scan_scanner_1,scan_
 write_csv(scanlist, file = "data/SCANS-TO-ANALYZE.csv")
 ```
 
-TO DO- work from here!
 
 ### SOPS
 
@@ -334,41 +351,25 @@ SOPS seems to be the 12 item components of SIPS (which are overall ratings of se
 Focusing on SOPS (summing within and subscales Pos, Neg, Gen, Disorg) - seem to be valid scoring based on ct.gov. 
 
 ``` {r sops}
-#filter for SOPS completion - only one data point missing SOPS, just dropping and refiltering
-sips.sops_scan.filt <- sips.sops_scan.filt %>% 
-  drop_na(P1)
-
-#since dropping NA we need to refilter pre-post subj
-##find subjects that have a baseline sops up to 364 days post-7T 
-clin364_sop <-  sips.sops_scan.filt  %>% subset(diff_in_days <= 364, select = BBLID) %>% unique()
-##find subjects that have a followup sips sops >365 days post-7T 
-clin365_sop <- sips.sops_scan.filt %>% subset(diff_in_days >= 365, select = BBLID) %>% unique()
-##filter df
-sips.sops_scan.filt <- subset(sips.sops_scan.filt, (BBLID %in% clin365_sop$BBLID & BBLID %in% clin364_sop$BBLID))
-
 #sum(is.na(sips.sops_scan.filt[7:25]))#see missing sops scores
-
-sops_scan <- sips.sops_scan.filt %>% mutate(sops_p = rowSums(across(7:11), na.rm=F),
-                                  sops_n = rowSums(across(12:17), na.rm=F),
-                                  sops_d = rowSums(across(18:21), na.rm=F),
-                                  sops_g = rowSums(across(22:25), na.rm=F),
+sops_scan <- sips.sops_stuff %>% mutate(sops_p = rowSums(across(plist), na.rm=F),
+                                  sops_n = rowSums(across(nlist), na.rm=F),
+                                  sops_d = rowSums(across(dlist), na.rm=F),
+                                  sops_g = rowSums(across(glist), na.rm=F),
                                   sops_tot = rowSums(across(c(sops_p, sops_n, sops_d, sops_g), na.rm=F)))
 
-sum(is.na(sops_scan$sops_tot))
+#sum(is.na(sops_scan$sops_tot)) #none missing!
 
 #plot for fun
-ggplot(sops_scan, aes(x=diff_in_days, y=BBLID, color=sops_tot)) + 
+ggplot(sops_scan, aes(x=diff_in_days1, y=BBLID, color=sops_tot)) + 
   geom_point() +
   geom_vline(xintercept=365) +
   labs(title="SOPS Relative to First 7T Scan", x="Days from 7T Scan") +
   theme(legend.position = "none")
 
 length(unique(sops_scan$BBLID))
-sops_tot <- sops_scan %>% drop_na(sops_tot)
-length(unique(sops_tot$BBLID))
 ```
 
-Dropping subjects with missing items for now, could be used for subscale scores
 
 Looking just at change immediately pre-post 7T:
 
