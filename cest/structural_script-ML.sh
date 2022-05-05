@@ -25,7 +25,7 @@ helpFunction()
    echo -e "\t-m Path to MNI templates directory"
    echo -e "\t-p Case (BBLID_ScanSession)"
    echo -e "\t-d Input subdirectory containing structural scan niftis"
-   echo -e "\t-t Scanner Type (ONM or Terra)"
+   echo -e "\t-t Scanner Type ('ONM' or 'Terra')"
    echo -e "\t-l Path to log subdirectory"
    exit 1 # Exit script after printing help
 }
@@ -78,16 +78,16 @@ echo "Scanner: $scantype"
 echo "### STRUCTURAL BRAIN MASKING ###"
 #note: This is about to be deprecated (to be replaced with hdBET)
 
-if $scantype=Terra
+if $scantype="Terra"
 
    #create initial mask with BET using INV2 image
    echo "create initial mask with BET using INV2 image"
-   bet $niftis/$case/$case-INV2.nii.gz $structural/$case/$case-bet -m -f 0.2 #binary, low fractional intensity threshold
+   bet $niftis/$case/*INV2.nii.gz $structural/$case/$case-bet -m -f 0.2 #binary, low fractional intensity threshold
    mv -f $structural/$case/$case-bet.nii.gz $logdir/$case-bet.nii.gz #move mask created above to log
 
    #generate final brain mask
    echo "generate final brain mask"
-   fslmaths $niftis/$case/$case-UNI.nii.gz -mul $structural/$case/${case}-bet_mask.nii.gz $structural/$case/$case-UNI_masked1.nii.gz
+   fslmaths $niftis/$case/*UNI.nii.gz -mul $structural/$case/${case}-bet_mask.nii.gz $structural/$case/$case-UNI_masked1.nii.gz
    mv -f $structural/$case/${case}-bet_mask.nii.gz $logdir/${case}-bet_mask.nii.gz
 
    fslmaths $structural/$case/$case-UNI_masked1.nii.gz -bin $structural/$case/$case-mask_bin.nii.gz
@@ -127,7 +127,7 @@ fi
 ## BIAS FIELD CORRECTION ##
 echo "## BIAS FIELD CORRECTION ##"
 
-if $scantype=Terra
+if $scantype="Terra"
 N4BiasFieldCorrection -d 3 \
 	-i $structural/$case/$case-UNI-masked.nii.gz \
 	-o $structural/$case/$case-UNI-processed.nii.gz \
@@ -147,7 +147,7 @@ fi
 echo "## FAST TISSUE SEGMENTATION ##"
 #note: This is about to be deprecated (replaced with Choi et al paper method or FAST&FIRST)
 
-if $scantype=Terra
+if $scantype="Terra"
 fast -n 3 -t 1 -g -p -o $structural/$case/fast/$case $structural/$case/$case-INV2-processed.nii.gz
 else
 fast -n 3 -t 1 -g -p -o $structural/$case/fast/$case $structural/$case/$case-mprage-processed.nii.gz
@@ -156,12 +156,12 @@ fi
 ## UNI TO MNI152 0.8MM BRAIN REGISTRATION ##
 echo "## UNI TO MNI152 0.8MM BRAIN REGISTRATION ##"
 
-if $scantype=Terra
+if $scantype="Terra"
 #register processed UNI to upsampled MNI T1 template
 # MNI152 T1 1mm template was upsampled to match UNI voxel resolution: ResampleImage 3 MNI152_T1_1mm_brain.nii.gz MNI152_T1_0.8mm_brain.nii.gz 0.8223684430X0.8223684430X0.8199999928 0 4
 antsRegistrationSyN.sh -d 3 -f $templates/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/$case-UNI-processed.nii.gz -o $structural/$case/MNI_transforms/$case-UNIinMNI-
 else
-antsRegistrationSyN.sh -d 3 -f $mni_templates/MNI/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/$case-mprage-processed.nii.gz -o $structural/$case/MNI_transforms/$case-mprageinMNI-
+antsRegistrationSyN.sh -d 3 -f $templates/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/$case-mprage-processed.nii.gz -o $structural/$case/MNI_transforms/$case-mprageinMNI-
 fi
 #######################################################################################################
 #clean up
