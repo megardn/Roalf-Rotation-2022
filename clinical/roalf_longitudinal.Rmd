@@ -291,6 +291,7 @@ sips.sops.labeled <- sips.sops_stuff %>%
          (use_scan2==TRUE & (!is.na(scan2.time)))| 
          (use_scan3==TRUE & (!is.na(scan3.time))))
 
+
 # sorting <- sips.sops_scan.filt %>% select(BBLID,DOSIPS,scan1_tp,scan2_tp,scan3_tp) %>%
 #   group_by(BBLID) %>%
 #   summary()
