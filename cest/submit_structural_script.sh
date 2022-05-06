@@ -13,7 +13,7 @@
 
 #######################################################################################################
 ## DEFINE PATHS ##
-structural=/project/bbl_roalf_cest_predict/data/outputs/structural_out #throwing outputs here for now - will move/compare later? 
+structural=/project/bbl_roalf_cest_predict/data/outputs
 niftis=/project/bbl_roalf_cest_predict/data/outputs/inputs #path to nifti inputs
 templates=/project/bbl_roalf_cest_predict/templates/ # path to templates
 logdir=/project/bbl_roalf_cest_predict/structural_logs
@@ -47,7 +47,7 @@ do
         fi
 
     # submit job to bsub ~ two -o flags, may be causing issue?
-    bsub -o $logdir/jobinfo.log bash structural_script.sh -o $structural -m $templates -p $case -d $dicoms -t $scantype -l $logdir
+    bsub -o $logdir/jobinfo.log bash structural_script-ML.sh -o $structural -m $templates -p $case -d $dicoms -t $scantype -l $logdir
     
     else
     echo "$case is missing structural niftis. Will not process"
