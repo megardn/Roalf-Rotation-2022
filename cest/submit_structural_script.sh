@@ -34,8 +34,9 @@ do
     
     then
     mkdir $structural/$case
-    mkdir $structural/$case/fast
-    mkdir $structural/$case/MNI_transforms
+    mkdir $structural/$case/structural
+    mkdir $structural/$case/structural/fast
+    mkdir $structural/$case/structural/MNI_transforms
 
     mkdir $logdir #Store logfiles here.
 

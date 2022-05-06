@@ -28,56 +28,35 @@ for i in $(ls $cest)
 do
     case=${i##*/}
 
-    #checking that subject has necessary input directories UPDATE THIS!!!
-    if ([ -f $cest/$case/*INV2.nii.gz ] && [ -f $cest/$case/*UNI_Images.nii.gz ]) \
-    || ([ -d $structural ] && [ -f $cest/$case/*mprage.nii.gz ])
-    #making logflile and necessary directories
-    
+    #checking that subject has necessary structural data & define scantype
+    if [ -f $outputs/$case/structural/$case-UNI-processed.nii.gz ] && [ -f $outputs/$case/structural/fast/${case}_seg.nii.gz ]
+    then 
+    scantype="Terra"
+    elif [ -f $outputs/$case/structural/$case-mprage-processed.nii.gz ] && [ -f $outputs/$case/structural/fast/${case}_seg.nii.gz ]
+    then 
+    scantype="ONM"
+    else
+    echo "Oh No! Structural Data is missing. Cannot process CEST!"
+    exit
+    fi
+
+    #check for GluCEST GUI data - update to -f .nii.gz
+    if [ -f $cest/$case/$case-B0MAP.nii ] && [ -f $cest/$case/$case-B1MAP.nii ] && [ -f $cest/$case/$case-B0B1CESTMAP.nii ] 
     then
-    mkdir $logdir #Store logfiles here
+    sleep 1
+    else
+    echo "Oh No! CEST GUI Data is missing. Cannot process CEST!"
+    exit
+    fi
     
-    #define scantype based on structural scans available
-        if [ -f $cest/$case/*INV2.nii.gz ] && [ -f $cest/$case/*UNI_Images.nii.gz ]
-        then scantype="Terra" #not sure if need "" here
-        elif [ -f $cest/$case/*mprage.nii.gz ]
-        then scantype="ONM" 
-        fi
+    #make directories
+    mkdir $logdir #Store logfiles here
+    mkdir $outputs/$case/fast
+    mkdir $outputs/$case/orig_data
+    mkdir $outputs/$case/structural/atlases
+    mkdir $outputs/$case/atlases
 
     # submit job to bsub ~ two -o flags, may be causing issue?
     bsub -o $logdir/jobinfo.log bash glucest_script.sh -c $cest -o $outputs -m $templates -p $case -t $scantype -l $logdir
-    
-    else
-    echo "$case is missing structural niftis. Will not process"
-    sleep 1.5
-
-    fi
 
 done
-
-
-#######################################################################################################
-## IDENTIFY CASES FOR PROCESSING ##
-for i in $(ls $cest)
-do
-case=${i##*/}
-echo "CASE: $case"
-#check for structural data
-if [ -e $structural/$case/$case-UNI-processed.nii.gz ] && [ -e $structural/$case/fast/${case}_seg.nii.gz ]
-then
-echo "Structural Data exists for $case"
-sleep 1.5
-else
-echo "Oh No! Structural Data is missing. Cannot process CEST!"
-sleep 1.5
-fi
-#check for GluCEST GUI data - update to -f .nii.gz
-if [ -d $cest/$case/*B0MAP ] && [ -d $cest/$case/*B1MAP ] && [ -d $cest/$case/*B0B1CESTMAP ] 
-then
-echo "CEST GUI Data exists for $case"
-sleep 1.5
-else
-echo "Oh No! CEST GUI Data is missing. Cannot process CEST!"
-sleep 1.5
-fi
-if ! [ -d $cest/$case ] && [ -d $cest/$case/*B0MAP ] && [ -d $cest/$case/*B1MAP ] && [ -d $cest/$case/*B0B1CESTMAP ] && [ -e $structural/$case/fast/${case}_seg.nii.gz ]
-then

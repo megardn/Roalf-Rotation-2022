@@ -82,45 +82,45 @@ if $scantype="Terra"
 
    #create initial mask with BET using INV2 image
    echo "create initial mask with BET using INV2 image"
-   bet $niftis/$case/*INV2.nii.gz $structural/$case/$case-bet -m -f 0.2 #binary, low fractional intensity threshold
-   mv -f $structural/$case/$case-bet.nii.gz $logdir/$case-bet.nii.gz #move mask created above to log
+   bet $niftis/$case/*INV2.nii.gz $structural/$case/structural/$case-bet -m -f 0.2 #binary, low fractional intensity threshold
+   mv -f $structural/$case/structural/$case-bet.nii.gz $logdir/$case-bet.nii.gz #move mask created above to log
 
    #generate final brain mask
    echo "generate final brain mask"
-   fslmaths $niftis/$case/*UNI.nii.gz -mul $structural/$case/${case}-bet_mask.nii.gz $structural/$case/$case-UNI_masked1.nii.gz
-   mv -f $structural/$case/${case}-bet_mask.nii.gz $logdir/${case}-bet_mask.nii.gz
+   fslmaths $niftis/$case/*UNI.nii.gz -mul $structural/$case/structural/${case}-bet_mask.nii.gz $structural/$case/structural/$case-UNI_masked1.nii.gz
+   mv -f $structural/$case/structural/${case}-bet_mask.nii.gz $logdir/${case}-bet_mask.nii.gz
 
-   fslmaths $structural/$case/$case-UNI_masked1.nii.gz -bin $structural/$case/$case-mask_bin.nii.gz
-   fslmaths $structural/$case/$case-mask_bin.nii.gz -ero -kernel sphere 1 $structural/$case/$case-UNI-mask-er.nii.gz
-   mv -f $structural/$case/$case-mask_bin.nii.gz $logdir/$case-mask_bin.nii.gz
+   fslmaths $structural/$case/structural/$case-UNI_masked1.nii.gz -bin $structural/$case/structural/$case-mask_bin.nii.gz
+   fslmaths $structural/$case/structural/$case-mask_bin.nii.gz -ero -kernel sphere 1 $structural/$case/structural/$case-UNI-mask-er.nii.gz
+   mv -f $structural/$case/structural/$case-mask_bin.nii.gz $logdir/$case-mask_bin.nii.gz
 
    #Apply finalized eroded mask to UNI & INV2 images
    echo "Apply finalized eroded mask to UNI & INV2 images"
-   fslmaths $structural/$case/$case-UNI_masked1.nii.gz -mas $structural/$case/$case-UNI-mask-er.nii.gz $structural/$case/$case-UNI-masked.nii.gz
-   fslmaths $structural/$case/$case-INV2.nii.gz -mas $structural/$case/$case-UNI-mask-er.nii.gz $structural/$case/$case-INV2-masked.nii.gz
+   fslmaths $structural/$case/structural/$case-UNI_masked1.nii.gz -mas $structural/$case/structural/$case-UNI-mask-er.nii.gz $structural/$case/structural/$case-UNI-masked.nii.gz
+   fslmaths $structural/$case/structural/$case-INV2.nii.gz -mas $structural/$case/structural/$case-UNI-mask-er.nii.gz $structural/$case/structural/$case-INV2-masked.nii.gz
 
 else
 # create mask with bet
    echo "create initial mask with BET using mprage image"
    mprage_file=$niftis/$case/*mprage.nii.gz 
-   bet $mprage_file $structural/$case/$case-bet -m -f 0.2
-   mv -f $structural/$case/$case-bet.nii.gz $log_files/$case-bet.nii.gz
+   bet $mprage_file $structural/$case/structural/$case-bet -m -f 0.2
+   mv -f $structural/$case/structural/$case-bet.nii.gz $log_files/$case-bet.nii.gz
 
    # apply the mask to the mprage
    echo "generate final brain mask"
    mprage_file=$niftis/$case/$subdirs/*mprage.nii.gz 
-   fslmaths $mprage_file -mul $structural/$case/$case-bet_mask.nii.gz $structural/$case/$case-mprage_masked1.nii.gz
-   mv -f $structural/$case/$case-bet_mask.nii.gz $log_files/$case-bet_mask.nii.gz 
+   fslmaths $mprage_file -mul $structural/$case/structural/$case-bet_mask.nii.gz $structural/$case/structural/$case-mprage_masked1.nii.gz
+   mv -f $structural/$case/structural/$case-bet_mask.nii.gz $log_files/$case-bet_mask.nii.gz 
 
    # binarize the masked brain
-   fslmaths $structural/$case/$case-mprage_masked1.nii.gz -bin $structural/$case/$case-mask_bin.nii.gz
+   fslmaths $structural/$case/structural/$case-mprage_masked1.nii.gz -bin $structural/$case/structural/$case-mask_bin.nii.gz
    # erode the binarized mask
-   fslmaths $structural/$case/$case-mask_bin.nii.gz -ero -kernel sphere 1 $structural/$case/$case-mprage-mask-er.nii.gz
-   mv -f $structural/$case/$case-mask_bin.nii.gz $log_files/$case-mask_bin.nii.gz
+   fslmaths $structural/$case/structural/$case-mask_bin.nii.gz -ero -kernel sphere 1 $structural/$case/structural/$case-mprage-mask-er.nii.gz
+   mv -f $structural/$case/structural/$case-mask_bin.nii.gz $log_files/$case-mask_bin.nii.gz
 
    # only apply once to mprage
    echo "apply finalized eroded mask to mprage image"
-   fslmaths $structural/$case/$case-mprage_masked1.nii.gz -mas $structural/$case/$case-mprage-mask-er.nii.gz $structural/$case/$case-mprage-masked.nii.gz
+   fslmaths $structural/$case/structural/$case-mprage_masked1.nii.gz -mas $structural/$case/structural/$case-mprage-mask-er.nii.gz $structural/$case/structural/$case-mprage-masked.nii.gz
    # fslmaths $mprage_file -mas $structural/$participant/$session/$participant-$session-mprage-mask-er.nii.gz $structural/$participant/$session/$participant-$session-mprage-masked.nii.gz
 fi
 #######################################################################################################
@@ -129,18 +129,18 @@ echo "## BIAS FIELD CORRECTION ##"
 
 if $scantype="Terra"
 N4BiasFieldCorrection -d 3 \
-	-i $structural/$case/$case-UNI-masked.nii.gz \
-	-o $structural/$case/$case-UNI-processed.nii.gz \
-	-x $structural/$case/$case-UNI-mask-er.nii.gz
+	-i $structural/$case/structural/$case-UNI-masked.nii.gz \
+	-o $structural/$case/structural/$case-UNI-processed.nii.gz \
+	-x $structural/$case/structural/$case-UNI-mask-er.nii.gz
 N4BiasFieldCorrection -d 3 \
-	-i $structural/$case/$case-INV2-masked.nii.gz \
-	-o $structural/$case/$case-INV2-processed.nii.gz \
-	-x $structural/$case/$case-UNI-mask-er.nii.gz #UNI mask
+	-i $structural/$case/structural/$case-INV2-masked.nii.gz \
+	-o $structural/$case/structural/$case-INV2-processed.nii.gz \
+	-x $structural/$case/structural/$case-UNI-mask-er.nii.gz #UNI mask
 else
 N4BiasFieldCorrection -d 3 \
-	-i $structural/$case/$case-mprage-masked.nii.gz \
-	-o $structural/$case/$case-mprage-processed.nii.gz \
-	-x $structural/$case/$case-mprage-mask-er.nii.gz
+	-i $structural/$case/structural/$case-mprage-masked.nii.gz \
+	-o $structural/$case/structural/$case-mprage-processed.nii.gz \
+	-x $structural/$case/structural/$case-mprage-mask-er.nii.gz
 fi
 #######################################################################################################
 ## FAST TISSUE SEGMENTATION ##
@@ -148,9 +148,9 @@ echo "## FAST TISSUE SEGMENTATION ##"
 #note: This is about to be deprecated (replaced with Choi et al paper method or FAST&FIRST)
 
 if $scantype="Terra"
-fast -n 3 -t 1 -g -p -o $structural/$case/fast/$case $structural/$case/$case-INV2-processed.nii.gz
+fast -n 3 -t 1 -g -p -o $structural/$case/structural/fast/$case $structural/$case/structural/$case-INV2-processed.nii.gz
 else
-fast -n 3 -t 1 -g -p -o $structural/$case/fast/$case $structural/$case/$case-mprage-processed.nii.gz
+fast -n 3 -t 1 -g -p -o $structural/$case/structural/fast/$case $structural/$case/structural/$case-mprage-processed.nii.gz
 fi
 #######################################################################################################
 ## UNI TO MNI152 0.8MM BRAIN REGISTRATION ##
@@ -159,19 +159,19 @@ echo "## UNI TO MNI152 0.8MM BRAIN REGISTRATION ##"
 if $scantype="Terra"
 #register processed UNI to upsampled MNI T1 template
 # MNI152 T1 1mm template was upsampled to match UNI voxel resolution: ResampleImage 3 MNI152_T1_1mm_brain.nii.gz MNI152_T1_0.8mm_brain.nii.gz 0.8223684430X0.8223684430X0.8199999928 0 4
-antsRegistrationSyN.sh -d 3 -f $templates/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/$case-UNI-processed.nii.gz -o $structural/$case/MNI_transforms/$case-UNIinMNI-
+antsRegistrationSyN.sh -d 3 -f $templates/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/structural/$case-UNI-processed.nii.gz -o $structural/$case/structural/MNI_transforms/$case-UNIinMNI-
 else
-antsRegistrationSyN.sh -d 3 -f $templates/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/$case-mprage-processed.nii.gz -o $structural/$case/MNI_transforms/$case-mprageinMNI-
+antsRegistrationSyN.sh -d 3 -f $templates/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/structural/$case-mprage-processed.nii.gz -o $structural/$case/structural/MNI_transforms/$case-mprageinMNI-
 fi
 #######################################################################################################
 #clean up
 
-mv $structural/$case/*.log  $logdir/
+mv $structural/$case/structural/*.log  $logdir/
 
-if ([ -f $structural/$case/MNI_transforms/$case-mprageinMNI-Warped.nii.gz ] \
-	&& [ -f $structural/$case/fast/${case}_seg.nii.gz ]) \
-   || ([ -f $structural/$case/MNI_transforms/$case-UNIinMNI-Warped.nii.gz ] \
-	&& [ -f $structural/$case/fast/${case}_seg.nii.gz ])
+if ([ -f $structural/$case/structural/MNI_transforms/$case-mprageinMNI-Warped.nii.gz ] \
+	&& [ -f $structural/$case/structural/fast/${case}_seg.nii.gz ]) \
+   || ([ -f $structural/$case/structural/MNI_transforms/$case-UNIinMNI-Warped.nii.gz ] \
+	&& [ -f $structural/$case/structural/fast/${case}_seg.nii.gz ])
 then	
 	echo -e "\n$case SUCCESFULLY PROCESSED.\n\n\n"
 else
