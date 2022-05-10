@@ -57,9 +57,9 @@ cest_logfile=$logdir/cest_gui_qc.log # if want to keep track of stuff in log fil
             " >> $logdir/Quality_Control/QC_GUI_CEST.html
             fi
 
-            slicer $cest/$participant/$session/cest/*/*B0map.nii -i -1.3 1.3 -a $logdir/Quality_Control/$participant-$session-B0MAP-qc.png
-            slicer $cest/$participant/$session/cest/*/*B1map.nii -i 0 3.3 -a $logdir/Quality_Control/$participant-$session-B1MAP-qc.png
-            slicer $cest/$participant/$session/cest/*/*B0B1CESTmap.nii -i 0 16 -a $logdir/Quality_Control/$participant-$session-CEST-qc.png
+            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B0map.nii -i -1.3 1.3 -a $logdir/Quality_Control/$participant-$session-B0MAP-qc.png
+            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B1map.nii -i 0 3.3 -a $logdir/Quality_Control/$participant-$session-B1MAP-qc.png
+            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B0B1CESTmap.nii -i 0 16 -a $logdir/Quality_Control/$participant-$session-CEST-qc.png
 
 
             echo "<br> <strong>$participant-$session</strong><br>

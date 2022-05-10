@@ -12,11 +12,11 @@
 	#UNI to MNI registration with ANTS SyN (rigid+affine+deformable syn)
 
 #######################################################################################################
-## DEFINE PATHS ##
-structural=/project/bbl_roalf_cest_predict/data/outputs
-niftis=/project/bbl_roalf_cest_predict/data/outputs/inputs #path to nifti inputs
+## DEFINE PATHS ## SANDBOX!!!
+structural=/project/bbl_roalf_cest_predict/data/sandbox/outputs
+niftis=/project/bbl_roalf_cest_predict/data/sandbox/inputs #path to nifti inputs
 templates=/project/bbl_roalf_cest_predict/templates/ # path to templates
-logdir=/project/bbl_roalf_cest_predict/structural_logs
+logdir=/project/bbl_roalf_cest_predict/logs/sandbox_structural
 #ANTSPATH=/appl/ANTs-2.3.1/bin/ #added to .bash_profile
 #######################################################################################################
 
@@ -38,7 +38,9 @@ do
     mkdir $structural/$case/structural/fast
     mkdir $structural/$case/structural/MNI_transforms
 
-    mkdir $logdir #Store logfiles here.
+        if ![ -d $structural]
+        then mkdir $logdir #Store logfiles here
+        fi
 
     #define scantype based on structural scans available
         if [ -f $niftis/$case/*INV2.nii.gz ] && [ -f $niftis/$case/*UNI_Images.nii.gz ]

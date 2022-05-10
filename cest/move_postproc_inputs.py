@@ -1,13 +1,12 @@
 import os
 import re
 
-#Script to organize raw CEST data to create data_dir input for `structural_script-ML.sh`:
+#Script to organize raw CEST data to create data_dir input for `structural_script-ML.sh` & `glucest_script.sh`:
 #expects dir that stores and *mprage.nii.gz OR *INV2.nii.gz AND *UNI_Images.nii.gz (BBLID_ScanID) 
-##Question: also wants none.nii?
 
-from_struc = '/project/bbl_roalf_cest_dti/margaret_sandbox/data/rawdata'
-from_cest = '/project/bbl_roalf_cest_dti/margaret_sandbox/data/matobj'
-to_data = '/project/bbl_roalf_cest_dti/margaret_sandbox/data/inputs'
+###SANDBOX PATHS###
+from_data = '/project/bbl_roalf_cest_predict/data/sandbox/data.pull'
+to_data = '/project/bbl_roalf_cest_predict/data/sandbox/inputs'
 
 #pull raw data
 subs = os.listdir(from_data)
@@ -24,20 +23,20 @@ while i < len(subs):
 
         ses_path = os.path.join(sub_path, ses, 'cest')
 
-        # make to_data folder for that subject - ok way to denote session?
+        # make to_data folder for that subject
         os.system(' '.join(['mkdir', os.path.join(to_data, sub+'_'+ses), '-p']))
         
         # copy the raw cest folder contents in 
         os.system(' '.join(['cp', 
-                           os.path.join(from_data, sub, ses, 'cest', '*'), 
+                           os.path.join(from_data, sub, ses, 'cest/cest_gui_niftis', '*.n*'), 
                            os.path.join(to_data, sub+'_'+ses),
                            '-r']))
 
-        #also grab .mat files
+        # also grab structural
         os.system(' '.join(['cp', 
-                           os.path.join(from_mat, sub+'_'+ses+'*'), 
-                           os.path.join(to_data, sub+'_'+ses)]))
-
+                           os.path.join(from_data, sub, ses, 'structural', '*.n*'), 
+                           os.path.join(to_data, sub+'_'+ses),
+                           '-r']))
 
     i = i + 1
 
