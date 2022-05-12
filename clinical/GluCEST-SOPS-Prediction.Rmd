@@ -396,7 +396,7 @@ sops_change_dx <- sops_change_dx %>%
 #make sure no obs lost
 n_unique(sops_change_dx$observation)
 summary(sops_change_dx$dx_7t_diff)
-skim(sops_change_dx)
+#skim(sops_change_dx)
 ```
 
 Just keeping diagnosis at baseline for now! It's probable that some dx changed over the course of the study but not what we're interested in ATM. 
@@ -415,7 +415,7 @@ Load and clean med data
 ```{r}
 #load med data
 meds <- read.csv("data/oracle_meds_all.csv", header = TRUE, stringsAsFactors = F, na = c("", "null"))
-str(meds)
+skim(meds)
 
 #each med is it's own row, so need to rotate wide
 meds <- meds %>%
@@ -492,7 +492,7 @@ sops_change_meds.final <- left_join(sops_change_dx, meds_filt, by="observation")
 
 #make sure no obs lost
 n_unique(sops_change_meds.final$observation)
-skim(sops_change_meds.final)
+#skim(sops_change_meds.final)
 ```
 
 Ok, now how to summarize all this medication info into one cohesive value
@@ -522,6 +522,123 @@ ideas - use 0,1 indicator for each class of medication at each timepoint? could 
 
 keep if start/end dates of med are < date > ?
 lifetime indicator - dont filter by date assessed, just if date-rx-start is < endpoint date?
+
+Test using the DOMED_START and DOMED_END to only capture meds that are explicitly current for 7T scan
+
+```{r}
+#get subset
+meds_reduced <- meds %>%
+  select(BBLID, DOCOLLECT, MED_COLLECT, NOTES, MEDICINE, PHARMCLASS, DOMED_START, DOMED_END, IS_CURRENT)
+
+#get managable subset of scan list
+scan_dates <- sops_change_dx %>%
+  select(BBLID, date7t, observation) %>%
+  distinct()
+
+#merge
+scan_date_med <- left_join(scan_dates, meds_reduced, by="BBLID")
+
+#ok, keep only rows where med is current to 7T
+scan_date_med_current <- scan_date_med %>%
+  filter(is.na(DOMED_START) | date7t > DOMED_START) %>% #keep if med is STARTED BEFORE 7t
+  filter(is.na(DOMED_START) | date7t < DOMED_END) %>% #keep if med was ENDED AFTER 7t
+  mutate(med_7t_diff = as.numeric(difftime(DOCOLLECT,date7t, units = "days"))) %>%
+  filter(!(is.na(DOMED_START) & (abs(med_7t_diff) > 100))) %>%  #only keep NAs if DOCOLLECT is w/in 100 days of scan
+  group_by(observation) %>%
+  mutate(count = row_number()) %>% #add counts so i can pivot after
+  ungroup() %>%
+  rename_with(.cols = 4:ncol(.), function(x){paste0("base.", x)}) #add prefix
+scan_date_med_current$base.NOTES[is.na(scan_date_med_current$base.NOTES)] <- "empty entry"
+skim(scan_date_med_current)
+
+#pivot wide
+scan_meds_current_wide <- pivot_wider(scan_date_med_current, id_cols=observation, names_from = base.count, values_from=c(4:12))
+#just keep essential cols
+scan.meds.current_wide.filt <- scan_meds_current_wide %>%
+  select(observation | contains("MEDICINE_") | contains("NOTES_")) %>%
+  select_if(~!all(is.na(.))) #drop any col that's totally empty
+```
+
+Trying to add PNC data to see if that will help get more baseline info
+
+```{r}
+pnc.meds <- read.csv("data/n1601_health_with_meds_20170421.csv", header = TRUE, stringsAsFactors = F, na ="") %>%
+  mutate(BBLID=as.factor(bblid)) %>%
+  select(-bblid)
+skim(pnc.meds)
+
+pnc.meds_scan_date <- inner_join(scan_dates, pnc.meds, by="BBLID") %>%
+  distinct(BBLID, date7t, .keep_all = T)
+n_unique(pnc.meds_scan_date$BBLID)
+```
+
+Waiting on Kosha to get the dates, hold off for now. In the meantime I'll try to find meds current to endpoint SOPs.
+
+```{r}
+#get managable subset of endpoint list
+end_dates <- sops_change_dx %>%
+  select(BBLID, DOSIPS, observation) %>%
+  distinct()
+#merge
+end_date_med <- left_join(end_dates, meds_reduced, by="BBLID")
+
+#ok, keep only rows where med is current to 7T
+end_date_med_current <- end_date_med %>%
+  filter(is.na(DOMED_START) | DOSIPS > DOMED_START) %>% #keep if med is STARTED BEFORE SOPS end
+  filter(is.na(DOMED_START) | DOSIPS < DOMED_END) %>% #keep if med was ENDED AFTER SOPS end
+  mutate(med_sops_diff = as.numeric(difftime(DOCOLLECT, DOSIPS, units = "days"))) %>%
+  filter(!(is.na(DOMED_START) & (abs(med_sops_diff) > 100))) %>%  #only keep NAs if DOCOLLECT is w/in 100 days of scan
+  group_by(observation) %>%
+  mutate(count = row_number()) %>% #add counts so i can pivot after
+  ungroup()
+end_date_med_current$NOTES[is.na(end_date_med_current$NOTES)] <- "empty entry"
+skim(end_date_med_current)
+
+#pivot wide
+end_meds_current_wide <- pivot_wider(end_date_med_current, id_cols=observation, names_from = count, values_from=c(4:12))
+#just keep essential cols
+end.meds.current_wide.filt <- end_meds_current_wide %>%
+  select(observation | contains("MEDICINE_") | contains("NOTES_")) %>%
+  select_if(~!all(is.na(.))) #drop any col that's totally empty
+```
+
+This seems to be working, lets try merging baseline and endpoint meds and see what we have
+
+```{r}
+currentmeds <- right_join(scan.meds.current_wide.filt, end.meds.current_wide.filt, by="observation")
+```
+
+Actually very narrow range of meds here, but the `empty entry` notes indicate either no medications or no new medications. Therefore I'll need to look back at participant's former meds
+
+Lets go back and look at lifetime:
+
+```{r}
+#ok, keep only rows where med is current to 7T
+med_lifetime <- end_date_med %>%
+  filter(is.na(DOMED_START) | DOSIPS > DOMED_START) %>% #keep if med is STARTED BEFORE SOPS end
+  group_by(observation) %>%
+  mutate(count = row_number()) %>% #add counts so i can pivot after
+  ungroup()
+med_lifetime$MEDICINE[is.na(med_lifetime$MEDICINE)] <- "empty entry"
+skim(med_lifetime)
+
+#trying to find distinct meds for each observation
+med_lifetime_dist <- med_lifetime %>%
+  group_by(observation) %>%
+  distinct(MEDICINE, .keep_all = T) %>% #keep distinct
+  mutate(count=row_number()) %>% #update counts so i can pivot after
+  ungroup() %>%
+  select(BBLID, DOSIPS, observation, MEDICINE, NOTES, count)
+table(med_lifetime_dist$MEDICINE)
+
+#pivot
+med_lifetime_dist.wide <- pivot_wider(med_lifetime_dist, id_cols=observation, names_from = count, values_from=c(MEDICINE, NOTES)) %>% # pivot
+  select_if(~!all(is.na(.))) #drop any col that's totally empty
+n_unique(med_lifetime_dist.wide$observation)
+sum(is.na(med_lifetime_dist.wide$MEDICINE_1))
+```
+
+Because there's med info for all subjects, if an individual only has `empty entry` value then we can infer that they are not taking any medications.
 
 # CEST values -> FINAL DF
 
