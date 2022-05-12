@@ -32,13 +32,13 @@ helpFunction()
 while getopts "o:m:p:d:t:l:" opt
 do
    case "$opt" in
-	  o ) structural="$OPTARG" ;;
-	  m ) templates="$OPTARG" ;;
-      p ) case="$OPTARG" ;;
-	  d ) niftis="$OPTARG" ;;
-     t ) scantype="$OPTARG" ;;
-     l ) logdir="$OPTARG" ;;
-      ? ) helpFunction ;; # Print helpFunction in case parameter is non-existent
+	o ) structural="$OPTARG" ;;
+	m ) templates="$OPTARG" ;;
+   p ) case="$OPTARG" ;;
+	d ) niftis="$OPTARG" ;;
+   t ) scantype="$OPTARG" ;;
+   l ) logdir="$OPTARG" ;;
+   ? ) helpFunction ;; # Print helpFunction in case parameter is non-existent
    esac
 done
 
@@ -51,7 +51,7 @@ fi
 #######################################################################################################
 ## INITALIZE LOGFILE ##
 
-logfile=$logdir/$case-${session}_struct.log
+logfile=$logdir/${case}_struct.log
 {
 echo "--------Processing structural data for $case $session---------"
 sleep 1.5
@@ -78,8 +78,8 @@ echo "Scanner: $scantype"
 echo "### STRUCTURAL BRAIN MASKING ###"
 #note: This is about to be deprecated (to be replaced with hdBET)
 
-if $scantype="Terra"
-
+if [ $scantype == "Terra" ]
+then
    #create initial mask with BET using INV2 image
    echo "create initial mask with BET using INV2 image"
    bet $niftis/$case/*INV2.nii.gz $structural/$case/structural/$case-bet -m -f 0.2 #binary, low fractional intensity threshold
@@ -87,7 +87,7 @@ if $scantype="Terra"
 
    #generate final brain mask
    echo "generate final brain mask"
-   fslmaths $niftis/$case/*UNI.nii.gz -mul $structural/$case/structural/${case}-bet_mask.nii.gz $structural/$case/structural/$case-UNI_masked1.nii.gz
+   fslmaths $niftis/$case/*UNI_Images.nii.gz -mul $structural/$case/structural/${case}-bet_mask.nii.gz $structural/$case/structural/$case-UNI_masked1.nii.gz
    mv -f $structural/$case/structural/${case}-bet_mask.nii.gz $logdir/${case}-bet_mask.nii.gz
 
    fslmaths $structural/$case/structural/$case-UNI_masked1.nii.gz -bin $structural/$case/structural/$case-mask_bin.nii.gz
@@ -97,26 +97,26 @@ if $scantype="Terra"
    #Apply finalized eroded mask to UNI & INV2 images
    echo "Apply finalized eroded mask to UNI & INV2 images"
    fslmaths $structural/$case/structural/$case-UNI_masked1.nii.gz -mas $structural/$case/structural/$case-UNI-mask-er.nii.gz $structural/$case/structural/$case-UNI-masked.nii.gz
-   fslmaths $structural/$case/structural/$case-INV2.nii.gz -mas $structural/$case/structural/$case-UNI-mask-er.nii.gz $structural/$case/structural/$case-INV2-masked.nii.gz
-
-else
+   fslmaths $niftis/$case/*INV2.nii.gz -mas $structural/$case/structural/$case-UNI-mask-er.nii.gz $structural/$case/structural/$case-INV2-masked.nii.gz
+elif [ $scantype == "ONM" ]
+then
 # create mask with bet
    echo "create initial mask with BET using mprage image"
    mprage_file=$niftis/$case/*mprage.nii.gz 
    bet $mprage_file $structural/$case/structural/$case-bet -m -f 0.2
-   mv -f $structural/$case/structural/$case-bet.nii.gz $log_files/$case-bet.nii.gz
+   mv -f $structural/$case/structural/$case-bet.nii.gz $logdir/$case-bet.nii.gz
 
    # apply the mask to the mprage
    echo "generate final brain mask"
    mprage_file=$niftis/$case/$subdirs/*mprage.nii.gz 
    fslmaths $mprage_file -mul $structural/$case/structural/$case-bet_mask.nii.gz $structural/$case/structural/$case-mprage_masked1.nii.gz
-   mv -f $structural/$case/structural/$case-bet_mask.nii.gz $log_files/$case-bet_mask.nii.gz 
+   mv -f $structural/$case/structural/$case-bet_mask.nii.gz $logdir/$case-bet_mask.nii.gz 
 
    # binarize the masked brain
    fslmaths $structural/$case/structural/$case-mprage_masked1.nii.gz -bin $structural/$case/structural/$case-mask_bin.nii.gz
    # erode the binarized mask
    fslmaths $structural/$case/structural/$case-mask_bin.nii.gz -ero -kernel sphere 1 $structural/$case/structural/$case-mprage-mask-er.nii.gz
-   mv -f $structural/$case/structural/$case-mask_bin.nii.gz $log_files/$case-mask_bin.nii.gz
+   mv -f $structural/$case/structural/$case-mask_bin.nii.gz $logdir/$case-mask_bin.nii.gz
 
    # only apply once to mprage
    echo "apply finalized eroded mask to mprage image"
@@ -127,7 +127,8 @@ fi
 ## BIAS FIELD CORRECTION ##
 echo "## BIAS FIELD CORRECTION ##"
 
-if $scantype="Terra"
+if [ $scantype == "Terra" ]
+then
 N4BiasFieldCorrection -d 3 \
 	-i $structural/$case/structural/$case-UNI-masked.nii.gz \
 	-o $structural/$case/structural/$case-UNI-processed.nii.gz \
@@ -136,7 +137,8 @@ N4BiasFieldCorrection -d 3 \
 	-i $structural/$case/structural/$case-INV2-masked.nii.gz \
 	-o $structural/$case/structural/$case-INV2-processed.nii.gz \
 	-x $structural/$case/structural/$case-UNI-mask-er.nii.gz #UNI mask
-else
+elif [ $scantype == "ONM" ]
+then
 N4BiasFieldCorrection -d 3 \
 	-i $structural/$case/structural/$case-mprage-masked.nii.gz \
 	-o $structural/$case/structural/$case-mprage-processed.nii.gz \
@@ -147,20 +149,24 @@ fi
 echo "## FAST TISSUE SEGMENTATION ##"
 #note: This is about to be deprecated (replaced with Choi et al paper method or FAST&FIRST)
 
-if $scantype="Terra"
+if [ $scantype == "Terra" ]
+then
 fast -n 3 -t 1 -g -p -o $structural/$case/structural/fast/$case $structural/$case/structural/$case-INV2-processed.nii.gz
-else
+elif [ $scantype == "ONM" ]
+then
 fast -n 3 -t 1 -g -p -o $structural/$case/structural/fast/$case $structural/$case/structural/$case-mprage-processed.nii.gz
 fi
 #######################################################################################################
 ## UNI TO MNI152 0.8MM BRAIN REGISTRATION ##
 echo "## UNI TO MNI152 0.8MM BRAIN REGISTRATION ##"
 
-if $scantype="Terra"
+if [ $scantype == "Terra" ]
+then
 #register processed UNI to upsampled MNI T1 template
 # MNI152 T1 1mm template was upsampled to match UNI voxel resolution: ResampleImage 3 MNI152_T1_1mm_brain.nii.gz MNI152_T1_0.8mm_brain.nii.gz 0.8223684430X0.8223684430X0.8199999928 0 4
 antsRegistrationSyN.sh -d 3 -f $templates/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/structural/$case-UNI-processed.nii.gz -o $structural/$case/structural/MNI_transforms/$case-UNIinMNI-
-else
+elif [ $scantype == "ONM" ]
+then
 antsRegistrationSyN.sh -d 3 -f $templates/MNI152_T1_0.8mm_brain.nii.gz -m $structural/$case/structural/$case-mprage-processed.nii.gz -o $structural/$case/structural/MNI_transforms/$case-mprageinMNI-
 fi
 #######################################################################################################

@@ -16,7 +16,7 @@
 structural=/project/bbl_roalf_cest_predict/data/sandbox/outputs
 niftis=/project/bbl_roalf_cest_predict/data/sandbox/inputs #path to nifti inputs
 templates=/project/bbl_roalf_cest_predict/templates/ # path to templates
-logdir=/project/bbl_roalf_cest_predict/logs/sandbox_structural
+logdir_base=/project/bbl_roalf_cest_predict/logs/sandbox_structural
 #ANTSPATH=/appl/ANTs-2.3.1/bin/ #added to .bash_profile
 #######################################################################################################
 
@@ -38,19 +38,24 @@ do
     mkdir $structural/$case/structural/fast
     mkdir $structural/$case/structural/MNI_transforms
 
-        if ![ -d $structural]
-        then mkdir $logdir #Store logfiles here
+        logdir=$logdir_base/$case
+        if [ ! -d $logdir_base ]
+        then 
+        mkdir $logdir_base #Store logfiles here
         fi
+        mkdir $logdir
 
     #define scantype based on structural scans available
         if [ -f $niftis/$case/*INV2.nii.gz ] && [ -f $niftis/$case/*UNI_Images.nii.gz ]
-        then scantype="Terra" #not sure if need "" here
+        then
+        scantype="Terra" #not sure if need "" here
         elif [ -f $niftis/$case/*mprage.nii.gz ]
-        then scantype="ONM" 
+        then
+        scantype="ONM" 
         fi
 
     # submit job to bsub ~ two -o flags, may be causing issue?
-    bsub -o $logdir/jobinfo.log bash structural_script-ML.sh -o $structural -m $templates -p $case -d $dicoms -t $scantype -l $logdir
+    bsub -o $logdir/jobinfo.log bash structural_script-ML.sh -o $structural -m $templates -p $case -d $niftis -t $scantype -l $logdir
     
     else
     echo "$case is missing structural niftis. Will not process"
