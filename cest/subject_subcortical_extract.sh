@@ -3,7 +3,8 @@
 #######################################################################################################
 ##DEFINE PATHS## SANDBOX!!!
 inputs=/project/bbl_roalf_cest_predict/data/sandbox/outputs #path to processed GluCEST data from glucest_script.sh
-outputpath=/project/bbl_roalf_cest_predict/data/sandbox/cest_values 
+outputpath=/project/bbl_roalf_cest_predict/data/sandbox/cest_values
+log_file=/project/bbl_roalf_cest_predict/logs/cest_extract.log
 #######################################################################################################
 
 mkdir $outputpath
@@ -15,17 +16,19 @@ do
 
 ##HARVARD OXFORD SUBCORTICAL ATLAS MEASURE EXTRACTION##
 echo "## $case HARVARD OXFORD SUBCORTICAL ATLAS MEASURE EXTRACTION##"
-    if [ -e $inputs/$case/GluCEST-HarvardOxford-Subcortical-Measures.csv ]
-    then
-    rm $outputpath/GluCEST-HarvardOxford-Subcortical-Measures.csv
-    fi
-
     #Create output measures csv
-        touch $outputpath/GluCEST-HarvardOxford-Subcortical-Measures.csv
-        #echo "Subject	Frontal_Pole_mean	Frontal_Pole_numvoxels	Frontal_Pole_SD" >> $outputpath/GluCEST-HarvardOxford-Subcortical-Measures.csv
-
+    if [ ! -f $outputpath/GluCEST-HarvardOxford-Subcortical-Measures.csv ]
+    then
+    touch $outputpath/GluCEST-HarvardOxford-Subcortical-Measures.csv
+    echo "Subject	L_CerebralWM_mean   L_CerebralWM_numvoxels	L_CerebralWM_SD L_CerebralCortex_mean	L_CerebralCortex_numvoxels	L_CerebralCortex_SD	L_LatVent_mean   L_LatVent_numvoxels	L_LatVent_SD	L_Thalamus_mean   L_Thalamus_numvoxels	L_Thalamus_SD	L_Caudate_mean   L_Caudate_numvoxels	L_Caudate_SD	L_Putamen_mean   L_Putamen_numvoxels	L_Putamen_SD	L_Pallidum_mean   L_Pallidum_numvoxels	L_Pallidum_SD	BrainStem_mean   BrainStem_numvoxels	Brainstem_SD	L_Hipp_mean   L_Hipp_numvoxels	L_Hipp_SD	L_Amygdala_mean   L_Amygdala_numvoxels	L_Amygdala_SD 	L_Accumbens_mean   L_Accumbens_numvoxels	L_Accumbens_SD	R_CerebralWM_mean   R_CerebralWM_numvoxels	R_CerebralWM_SD	R_CerebralCortex_mean   R_CerebralCortex_numvoxels	R_CerebralCortex_SD	R_LatVent_mean   R_LatVent_numvoxels	R_LatVent_SD	R_Thalamus_mean   R_Thalamus_numvoxels	R_Thalamus_SD	R_Caudate_mean   R_Caudate_numvoxels	R_Caudate_SD	R_Putamen_mean   R_Putamen_numvoxels	R_Putamen_SD	R_Pallidum_mean   R_Pallidum_numvoxels	R_Pallidum_SD	R_Hipp_mean   R_Hipp_numvoxels	R_Hipp_SD	R_Amygdala_mean   R_Amygdala_numvoxels	R_Amygdala_SD	R_Accumbens_mean   R_Accumbens_numvoxels	R_Accumbens_SD" >> $outputpath/GluCEST-HarvardOxford-Subcortical-Measures.csv
+    fi
+    
+    if ! [ -e $log_file ]
+    then
+    touch $log_file
+    fi
         #Extract subject measures for each GM ROI in GluCEST image (3dROIstats = AFNI command)
-        3dROIstats -mask $inputs/$case/atlases/$case-2d-HarvardOxford-sub.nii.gz -zerofill NaN -nomeanout -nzmean -nzsigma -nzvoxels $inputs/$case/$case-GluCEST.nii.gz >> $outputpath/$case/$case-HarvardOxford-Subcortical-GluCEST-measures.csv
+        3dROIstats -mask $inputs/$case/atlases/$case-2d-HarvardOxford-sub.nii.gz -numROI 21 -zerofill NaN -nomeanout -nzmean -nzsigma -nzvoxels -1DRformat $inputs/$case/$case-GluCEST.nii.gz >> $outputpath/$case/$case-HarvardOxford-Subcortical-GluCEST-measures.csv 2>>$log_file
 
         #Format subject csvs
         sed -i 's/name/Subject/g' $outputpath/$case/$case-HarvardOxford-Subcortical-GluCEST-measures.csv
@@ -38,24 +41,25 @@ echo "## $case HARVARD OXFORD SUBCORTICAL ATLAS MEASURE EXTRACTION##"
 ###Harvard Oxford Subcortical: GM Mask###
 echo "## $case HARVARD OXFORD SUBCORTICAL GM MEASURE EXTRACTION##"
 
-        if [ -e $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv ]
-            then
-            rm $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv
-        fi
-
-        #Create output measures csv
-        touch $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv
-        #echo "Subject	Frontal_Pole_mean	Frontal_Pole_numvoxels	Frontal_Pole_SD	Insular_Cortex_mean	Insular_Cortex_numvoxels	Insular_Cortex_SD	SFG_mean	SFG_numvoxels	SFG_SD	MFG_mean	MFG_numvoxels	MFG_SD	IFG_parstriangularis_mean	IFG_parstriangularis_numvoxels	IFG_parstriangularis_SD	IFG_parsopercularis_mean	IFG_parsopercularis_numvoxels	IFG_parsopercularis_SD	Precentral_Gyrus_mean	Precentral_Gyrus_numvoxels	Precentral_Gyrus_SD	Temporal_Pole_mean	Temporal_Pole_numvoxels	Temporal_Pole_SD	Superior_Temporal_Gyrus_ant_mean	Superior_Temporal_Gyrus_ant_numvoxels	Superior_Temporal_Gyrus_ant_SD	Superior_Temporal_Gyrus_post_mean	Superior_Temporal_Gyrus_post_numvoxels	Superior_Temporal_Gyrus_post_SD	Middle_Temporal_Gyrus_ant_mean	Middle_Temporal_Gyrus_ant_numvoxels	Middle_Temporal_Gyrus_ant_SD	Middle_Temporal_Gyrus_post_mean	Middle_Temporal_Gyrus_post_numvoxels	Middle_Temporal_Gyrus_post_SD	Middle_Temporal_Gyrus_temporoocc_mean	Middle_Temporal_Gyrus_temporoocc_numvoxels	Middle_Temporal_Gyrus_temporoocc_SD	Inferior_Temporal_Gyrus_ant_mean	Inferior_Temporal_Gyrus_ant_numvoxels	Inferior_Temporal_Gyrus_ant_SD	Inferior_Temporal_Gyrus_post_mean	Inferior_Temporal_Gyrus_post_numvoxels	Inferior_Temporal_Gyrus_post_SD	Inferior_Temporal_Gyrus_temporocc_mean	Inferior_Temporal_Gyrus_temporocc_numvoxels	Inferior_Temporal_Gyrus_temporocc_SD	Postcentral_Gyrus_mean	Postcentral_Gyrus_numvoxels	Postcentral_Gyrus_SD	Superior_Parietal_Lobule_mean	Superior_Parietal_Lobule_numvoxels	Superior_Parietal_Lobule_SD	Supramarginal_Gyrus_ant_mean	Supramarginal_Gyrus_ant_numvoxels	Supramarginal_Gyrus_ant_SD	Supramarginal_Gyrus_post_mean	Supramarginal_Gyrus_post_numvoxels	Supramarginal_Gyrus_post_SD	Angular_Gyrus_mean	Angular_Gyrus_numvoxels	Angular_Gyrus_SD	Lateral_Occipital_Cortex_sup_mean	Lateral_Occipital_Cortex_sup_numvoxels	Lateral_Occipital_Cortex_sup_SD	Lateral_Occipital_Cortex_inf_mean	Lateral_Occipital_Cortex_inf_numvoxels	Lateral_Occipital_Cortex_inf_SD	Intracalcarine_Cortex_mean	Intracalcarine_Cortex_numvoxels	Intracalcarine_Cortex_SD	Frontal_Medial_Cortex_mean	Frontal_Medial_Cortex_numvoxels	Frontal_Medial_Cortex_SD	Juxtapositional_Lobule_Cortex_mean	Juxtapositional_Lobule_Cortex_numvoxels	Juxtapositional_Lobule_Cortex_SD	Subcallosal_Cortex_mean	Subcallosal_Cortex_numvoxels	Subcallosal_Cortex_SD	Paracingulate_Gyrus_mean	Paracingulate_Gyrus_numvoxels	Paracingulate_Gyrus_SD	Anterior_cingulate_mean	Anterior_cingulate_numvoxels	Anterior_cingulate_SD	Posterior_cingulate_mean	Posterior_cingulate_numvoxels	Posterior_cingulate_SD	Precuneous_Cortex_mean	Precuneous_Cortex_numvoxels	Precuneous_Cortex_SD	Cuneal_Cortex_mean	Cuneal_Cortex_numvoxels	Cuneal_Cortex_SD	OFC_mean	OFC_numvoxels	OFC_SD	Parahippocampal_Gyrus_ant_mean	Parahippocampal_Gyrus_ant_numvoxels	Parahippocampal_Gyrus_ant_SD	Parahippocampal_Gyrus_post_mean	Parahippocampal_Gyrus_post_numvoxels	Parahippocampal_Gyrus_post_SD	Lingual_Gyrus_mean	Lingual_Gyrus_numvoxels	Lingual_Gyrus_SD	Temporal_Fusiform_Cortex_ant_mean	Temporal_Fusiform_Cortex_ant_numvoxels	Temporal_Fusiform_Cortex_ant_SD	Temporal_Fusiform_Cortex_post_mean	Temporal_Fusiform_Cortex_post_numvoxels	Temporal_Fusiform_Cortex_post_SD	Temporal_Occipital_Fusiform_Cortex_mean	Temporal_Occipital_Fusiform_Cortex_numvoxels	Temporal_Occipital_Fusiform_Cortex_SD	Occipital_Fusiform_Gyrus_mean	Occipital_Fusiform_Gyrus_numvoxels	Occipital_Fusiform_Gyrus_SD	Frontal_Operculum_Cortex_mean	Frontal_Operculum_Cortex_numvoxels	Frontal_Operculum_Cortex_SD	Central_Opercular_Cortex_mean	Central_Opercular_Cortex_numvoxels	Central_Opercular_Cortex_SD	Parietal_Operculum_Cortex_mean	Parietal_Operculum_Cortex_numvoxels	Parietal_Operculum_Cortex_SD	Planum_Polare_mean	Planum_Polare_numvoxels	Planum_Polare_SD	Heschls_Gyrus_mean	Heschls_Gyrus_numvoxels	Heschls_Gyrus_SD	Planum_Temporale_mean	Planum_Temporale_numvoxels	Planum_Temporale_SD	Supracalcarine_Cortex_mean	Supracalcarine_Cortex_numvoxels	Supracalcarine_Cortex_SD	Occipital_Pole_mean	Occipital_Pole_numvoxels	Occipital_Pole_SD" >> $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv
-
-
+        #if [ -e $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv ]
+            #then
+            #rm $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv
+        #fi
+    #Create output measures csv
+    if [ ! -f $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv ]
+    then
+    touch $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv
+    echo "Subject	L_CerebralWM_mean   L_CerebralWM_numvoxels	L_CerebralWM_SD L_CerebralCortex_mean	L_CerebralCortex_numvoxels	L_CerebralCortex_SD	L_LatVent_mean   L_LatVent_numvoxels	L_LatVent_SD	L_Thalamus_mean   L_Thalamus_numvoxels	L_Thalamus_SD	L_Caudate_mean   L_Caudate_numvoxels	L_Caudate_SD	L_Putamen_mean   L_Putamen_numvoxels	L_Putamen_SD	L_Pallidum_mean   L_Pallidum_numvoxels	L_Pallidum_SD	BrainStem_mean   BrainStem_numvoxels	Brainstem_SD	L_Hipp_mean   L_Hipp_numvoxels	L_Hipp_SD	L_Amygdala_mean   L_Amygdala_numvoxels	L_Amygdala_SD 	L_Accumbens_mean   L_Accumbens_numvoxels	L_Accumbens_SD	R_CerebralWM_mean   R_CerebralWM_numvoxels	R_CerebralWM_SD	R_CerebralCortex_mean   R_CerebralCortex_numvoxels	R_CerebralCortex_SD	R_LatVent_mean   R_LatVent_numvoxels	R_LatVent_SD	R_Thalamus_mean   R_Thalamus_numvoxels	R_Thalamus_SD	R_Caudate_mean   R_Caudate_numvoxels	R_Caudate_SD	R_Putamen_mean   R_Putamen_numvoxels	R_Putamen_SD	R_Pallidum_mean   R_Pallidum_numvoxels	R_Pallidum_SD	R_Hipp_mean   R_Hipp_numvoxels	R_Hipp_SD	R_Amygdala_mean   R_Amygdala_numvoxels	R_Amygdala_SD	R_Accumbens_mean   R_Accumbens_numvoxels	R_Accumbens_SD" >> $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv
+    fi
+ 
         #Extract subject measures (output average(?) value of GM mask in ROI -> GM volume of that ROI in that slice)
-        3dROIstats -mask $inputs/$case/atlases/$case-2d-HarvardOxford-sub.nii.gz -zerofill NaN -nomeanout -nzmean -nzsigma -nzvoxels $inputs/$case/fast/$case-2d-FASTGMprob.nii.gz >> $outputpath/$case/$case-HarvardOxford-Subcortical-GMDensity-measures.csv
+        3dROIstats -mask $inputs/$case/atlases/$case-2d-HarvardOxford-sub.nii.gz -numROI 21 -zerofill NaN -nomeanout -nzmean -nzsigma -nzvoxels -1DRformat $inputs/$case/fast/$case-2d-FASTGMprob.nii.gz >> $outputpath/$case/$case-HarvardOxford-Subcortical-GMDensity-measures.csv 2>>$log_file
 
 
         #Format subject csvs
         sed -i 's/name/Subject/g' $outputpath/$case/$case-HarvardOxford-Subcortical-GMDensity-measures.csv
-        cut -f2-3 --complement $outputpath/$case/$case-HarvardOxford-Subcortical-GMDensity-measures.csv >> $outputpath/$case/tmp.csv
-        mv $outputpath/$case/tmp.csv $outputpath/$case/$case-HarvardOxford-Subcortical-GMDensity-measures.csv
+        cut -f2-3 --complement $outputpath/$case/$case-HarvardOxford-Subcortical-GMDensity-measures.csv >> $outputpath/$case/tmpGM.csv
+        mv $outputpath/$case/tmpGM.csv $outputpath/$case/$case-HarvardOxford-Subcortical-GMDensity-measures.csv
 
         #Enter data into study output measures csv
         sed -n "2p" $outputpath/$case/$case-HarvardOxford-Subcortical-GMDensity-measures.csv >> $outputpath/GMDensity-HarvardOxford-Subcortical-Measures.csv

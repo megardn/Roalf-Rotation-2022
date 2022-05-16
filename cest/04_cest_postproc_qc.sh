@@ -5,62 +5,37 @@
 # activate xbash and make sure to have fsl loaded before running this (fsl slicer function is called). Loaded automatically with the BBL bash_rc line.
 #####################
 
-# cest directory
-cest=/project/bbl_roalf_cest_dti/CEST
-
-
-logfile=/home/joelleba/cest_postproc_qc.log # if want to keep track of stuff in log file
+#paths
+cest=/project/bbl_roalf_cest_predict/data/sandbox/outputs #SANDBOX!
+logdir=/project/bbl_roalf_cest_predict/logs
+cest_logfile=$logdir/cest_postproc_qc.log
 {
-for dataset in 7T_Terra 7T_Magnetom; 
+for i in $(ls $cest) # script will only be executed for participants in this directory
     do
 
-    # if [ $dataset == 7T_Terra ]
-    # then continue
-    # niftis=cest/cest_gui_niftis
-    # elif [ $dataset == 7T_Magnetom ]
-    # then
-    # niftis=cest/cest_gui_niftis
-    # fi 
+        case=${i##*/}
 
-    niftis=cest/cest_gui_niftis
-    postproc=postprocessing/${dataset}_cest_out
+        if [ -f $cest/$case/orig_data/*B0map.nii ] \
+        && [ -f $cest/$case/orig_data/*B1map.nii ] \
+        && [ -f $cest/$case/orig_data/*B0B1CESTmap.nii ] \
+        && [ -f $cest/$case/*GluCEST.nii.gz ] \
+        && [ -f $cest/$case/atlases/*2d-HarvardOxford-sub.nii.gz ] \
+        && [ -f $cest/$case/atlases/*2d-HarvardOxford-cort.nii.gz  ]
 
-    for i in $(ls $cest/$dataset) # script will only be executed for participants in this directory
-        do
-
-        participant=${i##*/}
-        # participant=14528
-        # participant=106573_8900
-
-        for j in $(ls $cest/$dataset/$participant)
-            do 
-            session=${j##*/}
-            case=$participant-$session
-            # session=8900
-
-            # echo $(ls $cest/$dataset/$participant/$session/$niftis)
-        
-            if [ -f $cest/$dataset/$participant/$session/$niftis/*B0map.nii ] \
-                && [ -f $cest/$dataset/$participant/$session/$niftis/*B1map.nii ] \
-                && [ -f $cest/$dataset/$participant/$session/$niftis/*B0B1CESTmap.nii ] \
-                && [ -f $cest/$postproc/$participant/$session/*GluCEST.nii.gz ] \
-                && [ -f $cest/$postproc/$participant/$session/atlases/*2d-HarvardOxford-cort.nii.gz ] \
-                && [ -f $cest/$postproc/$participant/$session/atlases/*-2d-JHU.nii.gz ]
-
-            then
+        then
             
-            echo -e "\n------- MAKING POSTPROCESSING QC IMAGES for $case -------\n"
+        echo -e "\n------- MAKING POSTPROCESSING QC IMAGES for $case -------\n"
 
             
-            if ! [ -d $cest/Quality_Control/QC_Postprocessing_$dataset ]
+            if ! [ -d $logdir/Quality_Control/QC_Postprocessing_pngs ]
             then
-                mkdir $cest/Quality_Control/QC_Postprocessing_$dataset
+                mkdir $logdir/Quality_Control/QC_Postprocessing_pngs
             fi
 
 
-            if ! [ -e $cest/Quality_Control/QC_Postprocessing_$dataset/QC_postproc_$dataset.html ]
+            if ! [ -e $logdir/Quality_Control/QC_postproc.html ]
             then
-                touch $cest/Quality_Control/QC_Postprocessing_$dataset/QC_postproc_$dataset.html
+                touch $logdir/Quality_Control/QC_postproc.html
                 echo "<html>
 
                 <head>
@@ -69,47 +44,44 @@ for dataset in 7T_Terra 7T_Magnetom;
 
                 <body>
 
-                <br><strong><font size="7.5" color="1814A1"> QUALITY CONTROL: FINAL THRESHOLDED GLUCEST, Harvard-Oxford atlas and JHU atlas </font></strong><br>
+                <br><strong><font size="7.5" color="1814A1"> QUALITY CONTROL: FINAL THRESHOLDED GLUCEST, Harvard-Oxford Subcortical and Cortical </font></strong><br>
                 <br>
-                <br><strong><font size="5" color="1814A1">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Thresholded GluCEST &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; Harvard-Oxford atlas  &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp;JHU atlas </font></strong><br>
+                <br><strong><font size="5" color="1814A1">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Thresholded GluCEST &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;Subcortical  &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp;Cortical </font></strong><br>
                 <br>
 
-                " >> $cest/Quality_Control/QC_Postprocessing_$dataset/QC_postproc_$dataset.html
+                " >> $logdir/Quality_Control/QC_postproc.html
             fi
 
         
-            # creating gluCEST png (with slicer from FSL)
-            slicer $cest/$postproc/$participant/$session/$case-GluCEST.nii.gz -i 0 16 -a $cest/Quality_Control/QC_Postprocessing_$dataset/$case-GluCEST-qc.png
+        # creating gluCEST png (with slicer from FSL)
+        slicer $cest/$case/*GluCEST.nii.gz -i 0 16 -a $logdir/Quality_Control/QC_Postprocessing/$case-GluCEST-qc.png
             
-            # creating Harvard-Oxford png (with overlay from FSL)
-            overlay 1 0 $cest/$postproc/$participant/$session/$case-GluCEST.nii.gz -a $cest/$postproc/$participant/$session/atlases/$case-2d-HarvardOxford-cort.nii.gz 1 20 $cest/Quality_Control/QC_Postprocessing_$dataset/$case-HO-overlay.nii.gz
-            slicer $cest/Quality_Control/QC_Postprocessing_$dataset/$case-HO-overlay.nii.gz  -l /import/monstrum/Applications/fsl/etc/luts/renderhot.lut -a $cest/Quality_Control/QC_Postprocessing_$dataset/$case-HO-atlas-qc.png
-            rm -f $cest/Quality_Control/QC_Postprocessing_$dataset/$case-HO-overlay.nii.gz
+        # creating Harvard-Oxford pngs (with overlay from FSL)
+        overlay 1 0 $cest/$case/*GluCEST.nii.gz -a $cest/$case/atlases/*2d-HarvardOxford-sub.nii.gz 1 20 $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-sub-overlay.nii.gz
+        slicer $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-sub-overlay.nii.gz  -l /import/monstrum/Applications/fsl/etc/luts/renderhot.lut -a $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-sub-qc.png
+        rm -f $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-sub-overlay.nii.gz
 
-            # creating JHU png
-            overlay 1 0 $cest/$postproc/$participant/$session/$case-GluCEST.nii.gz -a $cest/$postproc/$participant/$session/atlases/$case-2d-JHU.nii.gz 1 20 $cest/Quality_Control/QC_Postprocessing_$dataset/$case-HO-overlay.nii.gz
-            slicer $cest/Quality_Control/QC_Postprocessing_$dataset/$case-HO-overlay.nii.gz  -l /import/monstrum/Applications/fsl/etc/luts/renderhsv.lut -a $cest/Quality_Control/QC_Postprocessing_$dataset/$case-JHU-atlas-qc.png
-            rm -f $cest/Quality_Control/QC_Postprocessing_$dataset/$case-HO-overlay.nii.gz
+        overlay 1 0 $cest/$case/*GluCEST.nii.gz -a $cest/$case/atlases/*2d-HarvardOxford-cort.nii.gz 1 20 $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-cort-overlay.nii.gz
+        slicer $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-cort-overlay.nii.gz  -l /import/monstrum/Applications/fsl/etc/luts/renderhot.lut -a $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-cort-qc.png
+        rm -f $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-cort-overlay.nii.gz
 
-
-            echo "<br> <strong>$case</strong><br>
-            <img src=$case-GluCEST-qc.png height="350" width="350">
-            <img src=$case-HO-atlas-qc.png height="350" width="350">
-            <img src=$case-JHU-atlas-qc.png height="350" width="350">
-            <br>
+                echo "<br> <strong>$case</strong><br>
+        <img src=$case-GluCEST-qc.png height="350" width="350">
+        <img src=$case-HO-sub-qc.png height="350" width="350">
+        <img src=$case-HO-cort-qc.png height="350" width="350">
+        <br>
 
 
-            " >> $cest/Quality_Control/QC_Postprocessing_$dataset/QC_postproc_$dataset.html
+        " >> $logdir/Quality_Control/QC_postproc.html
 
-            #######################################################################################################
+#######################################################################################################
 
-            echo -e "\n$case SUCCESFULLY PROCESSED\n\n\n"
+        echo -e "\n$case SUCCESFULLY PROCESSED\n\n\n"
 
-            else
-                echo "$participant/$sessionis missing CEST niftis or postprocessing outputs. Skipping this participant/session."
+        else
+        echo "$case missing CEST niftis or postprocessing outputs. Skipping."
                 # sleep 1.5
-            fi
-        done
+        fi
     done
-done
+    
 } | tee "$logfile"
