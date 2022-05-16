@@ -503,6 +503,8 @@ sops_change_meds.final %>%
   select(contains("MEDICINE")) %>%
   unlist() %>%
   table()
+
+#see med date relative to scan d
 ```
 
 NOTES:
@@ -536,7 +538,7 @@ scan_dates <- sops_change_dx %>%
   distinct()
 
 #merge
-scan_date_med <- left_join(scan_dates, meds_reduced, by="BBLID")
+scan_date_med <- inner_join(scan_dates, meds_reduced, by="BBLID")
 
 #ok, keep only rows where med is current to 7T
 scan_date_med_current <- scan_date_med %>%
@@ -580,7 +582,7 @@ end_dates <- sops_change_dx %>%
   select(BBLID, DOSIPS, observation) %>%
   distinct()
 #merge
-end_date_med <- left_join(end_dates, meds_reduced, by="BBLID")
+end_date_med <- inner_join(end_dates, meds_reduced, by="BBLID")
 
 #ok, keep only rows where med is current to 7T
 end_date_med_current <- end_date_med %>%
@@ -639,6 +641,10 @@ sum(is.na(med_lifetime_dist.wide$MEDICINE_1))
 ```
 
 Because there's med info for all subjects, if an individual only has `empty entry` value then we can infer that they are not taking any medications.
+
+```{r}
+write.csv(med_lifetime_dist.wide, "data/med_lifetime_dist.wide.csv", row.names=FALSE, na="")
+```
 
 # CEST values -> FINAL DF
 
