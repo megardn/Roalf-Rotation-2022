@@ -15,10 +15,10 @@
 #generation HarvardOxford cortical and subcortical masks
 #######################################################################################################
 ## DEFINE PATHS ##  QUESTION: IDK why what's up with dicom vs structural paths, switching paths over to outputs dir which holds pyGluCEST nifti and structural_script.sh nifti outputs
-cest=/project/bbl_roalf_cest_dti/margaret_sandbox/data/inputs #path to processed GluCEST data inputs
-outputs=/project/bbl_roalf_cest_predict/data/outputs #path to structural_script.sh outputs AND where GluCEST outputs will be saved
+cest=/project/bbl_roalf_cest_predict/data/sandbox/inputs #path to processed GluCEST data inputs
+outputs=/project/bbl_roalf_cest_predict/data/sandbox/outputs #path to structural_script.sh outputs AND where GluCEST outputs will be saved
 templates=/project/bbl_roalf_cest_predict/templates/ #path to templates
-logdir=/project/bbl_roalf_cest_predict/cest_logs
+logdir_base=/project/bbl_roalf_cest_predict/logs/sandbox_cest
 #######################################################################################################
 
 #######################################################################################################
@@ -41,7 +41,7 @@ do
     fi
 
     #check for GluCEST GUI data - update to -f .nii.gz
-    if [ -f $cest/$case/$case-B0MAP.nii ] && [ -f $cest/$case/$case-B1MAP.nii ] && [ -f $cest/$case/$case-B0B1CESTMAP.nii ] 
+    if [ -f $cest/$case/*-B0map.nii ] && [ -f $cest/$case/*-B1map.nii ] && [ -f $cest/$case/*-B0B1CESTmap.nii ] 
     then
     sleep 1
     else
@@ -50,7 +50,12 @@ do
     fi
     
     #make directories
-    mkdir $logdir #Store logfiles here
+    if [ ! -d $logdir_base ]
+    then 
+    mkdir $logdir_base #Store logfiles here
+    fi
+    logdir=$logdir_base/$case
+    mkdir $logdir 
     mkdir $outputs/$case/fast
     mkdir $outputs/$case/orig_data
     mkdir $outputs/$case/structural/atlases

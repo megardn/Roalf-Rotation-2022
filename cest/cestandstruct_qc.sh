@@ -33,9 +33,9 @@ cest_logfile=$logdir/cest_gui_qc.log # if want to keep track of stuff in log fil
             
             echo -e "\n------- MAKING QC IMAGES for $participant/$session -------\n"
 
-            if ! [ -d $logdir/Quality_Control ]
+            if ! [ -d $logdir/Quality_Control/QC_Preprocessing_pngs ]
             then
-            mkdir $logdir/Quality_Control
+            mkdir $logdir/Quality_Control/QC_Preprocessing_pngs
             fi
 
             if ! [ -e $logdir/Quality_Control/QC_GUI_CEST.html ]
@@ -57,9 +57,9 @@ cest_logfile=$logdir/cest_gui_qc.log # if want to keep track of stuff in log fil
             " >> $logdir/Quality_Control/QC_GUI_CEST.html
             fi
 
-            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B0map.nii -i -1.3 1.3 -a $logdir/Quality_Control/$participant-$session-B0MAP-qc.png
-            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B1map.nii -i 0 3.3 -a $logdir/Quality_Control/$participant-$session-B1MAP-qc.png
-            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B0B1CESTmap.nii -i 0 16 -a $logdir/Quality_Control/$participant-$session-CEST-qc.png
+            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B0map.nii -i -1.3 1.3 -a $logdir/Quality_Control/QC_Preprocessing_pngs/$participant-$session-B0MAP-qc.png
+            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B1map.nii -i 0 3.3 -a $logdir/Quality_Control/QC_Preprocessing_pngs/$participant-$session-B1MAP-qc.png
+            slicer $cest/$participant/$session/cest/cest_gui_niftis/*B0B1CESTmap.nii -i 0 16 -a $logdir/Quality_Control/QC_Preprocessing_pngs/$participant-$session-CEST-qc.png
 
 
             echo "<br> <strong>$participant-$session</strong><br>
@@ -125,7 +125,7 @@ struc_logfile=$logdir/struc_data.pull_qc.log # if want to keep track of stuff in
 
             if [ -f $cest/$participant/$session/structural/*mprage.nii.gz ] #mprage
             then
-            slicer $cest/$participant/$session/structural/*mprage.nii.gz -a $logdir/Quality_Control/$participant-$session-mprage-qc.png
+            slicer $cest/$participant/$session/structural/*mprage.nii.gz -a $logdir/Quality_Control/QC_Preprocessing_pngs/$participant-$session-mprage-qc.png
 
             echo "<br> <strong>$participant-$session MPRAGE</strong><br>
             <img src=$participant-$session-mprage-qc.png height="350" width="700">
@@ -136,8 +136,8 @@ struc_logfile=$logdir/struc_data.pull_qc.log # if want to keep track of stuff in
             elif [ -f $cest/$participant/$session/structural/*INV2.nii.gz ] \
                 && [ -f $cest/$participant/$session/structural/*UNI_Images.nii.gz ] #INV2 & UNI
             then
-            slicer $cest/$participant/$session/structural/*INV2.nii.gz -a $logdir/Quality_Control/$participant-$session-INV2-qc.png
-            slicer $cest/$participant/$session/structural/*UNI_Images.nii.gz -a $logdir/Quality_Control/$participant-$session-UNI-qc.png
+            slicer $cest/$participant/$session/structural/*INV2.nii.gz -a $logdir/Quality_Control/QC_Preprocessing_pngs/$participant-$session-INV2-qc.png
+            slicer $cest/$participant/$session/structural/*UNI_Images.nii.gz -a $logdir/Quality_Control/QC_Preprocessing_pngs/$participant-$session-UNI-qc.png
 
             echo "<br> <strong>$participant-$session INV2 & UNI</strong><br>
             <img src=$participant-$session-INV2-qc.png height="350" width="700">

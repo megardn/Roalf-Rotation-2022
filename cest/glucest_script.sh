@@ -8,11 +8,24 @@
 
 #The processing pipeline includes:
 #B0 and B1 map thresholding of GluCEST images
-#CSF removal from GluCEST images 
-#GluCEST brain masking - now in pyglucest???
+#CSF removal from GluCEST images  
+#GluCEST brain (re)masking
 #registration of atlases from MNI space to participant UNI or MPRAGE images
 #registration of FAST segmentation to GluCEST images
 #generation HarvardOxford cortical and subcortical masks
+#######################################################################################################
+#INPUTS: 
+   #GUI CEST niftis ($cest/$case/*-B0map.nii, $cest/$case/*-B1map.nii & $cest/$case/*-B0B1CESTmap.nii)
+   #FAST segmentations of structural images from structural_script-ML.sh
+      # 3-part segmentation ($outputs/$case/structural/fast/${case}_seg.nii.gz)
+      # GM segmentation ($outputs/$case/structural/fast/${case}_prob_1.nii.gz)
+#OUTPUTS:
+  #FAST 3-part segmentation in 2D CEST slab ($outputs/$case/fast/$case-2d-FAST.nii)
+  #probabalistic GM mask in 2D CEST slab ($outputs/$case/fast/$case-2d-FASTGMprob.nii)
+  #non-CSF segmentation ($outputs/$case/fast/$case-tissuemap-bin.nii.gz)
+  #non-CSF mask ($outputs/$case/fast/$case-tissuemap-bin.nii.gz)
+  #thresholded, brain-masked and CSF-excluded GluCEST image ($outputs/$case/$case-GluCEST.nii.gz)
+  #Harvard Cortical and Subcortical Atlases transformed into native space of CEST slab w/ CSF removed ($outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii.gz)
 #######################################################################################################
 ## HELPFUNCTION ##
 helpFunction()
@@ -41,14 +54,14 @@ do
 done
 
 # Print helpFunction in case parameters are empty
-if [ -z "$cest" ] || [ -z "$outputs" ] || [ -z "$templates" ] || [ -z "$case" ] || [ -z "$scantypes" ] || [ -z "$logdir" ]
+if [ -z "$cest" ] || [ -z "$outputs" ] || [ -z "$templates" ] || [ -z "$case" ] || [ -z "$scantype" ] || [ -z "$logdir" ]
 then
    echo "Some or all of the arguments are empty";
    helpFunction
 fi
 #######################################################################################################
 ## INITALIZE LOGFILE ##
-logfile=$log_dir/${case}_glucest_script.log
+logfile=$logdir/${case}_glucest_script.log
 (
 echo "--------Processing GluCEST data for $case---------" 
 sleep 1.5
@@ -61,37 +74,37 @@ echo "Scanner: $scantype"
 ## THRESHOLD B0 AND B1 MAPS ##
 echo "## THRESHOLD B0 AND B1 MAPS ##"
 #threshold b0 from -1 to 1 ppm (relative to water resonance)
-fslmaths $cest/$case/$case-B0MAP.nii -add 10 $outputs/$case/$case-B0MAP-pos.nii.gz # make B0 map values positive to allow for thresholding with fslmaths
+fslmaths $cest/$case/*-B0map.nii -add 10 $outputs/$case/$case-B0MAP-pos.nii.gz # make B0 map values positive to allow for thresholding with fslmaths
 fslmaths $outputs/$case/$case-B0MAP-pos.nii.gz -thr 9 -uthr 11 $outputs/$case/$case-B0MAP-thresh.nii.gz #threshold from -1(+10=9) to 1(+10=11)
 fslmaths $outputs/$case/$case-B0MAP-thresh.nii.gz -bin $outputs/$case/$case-b0.nii.gz #binarize thresholded B0 map
 #threshold b1 from 0.3 to 1.3
-fslmaths $cest/$case/$case-B1MAP.nii -thr 0.3 -uthr 1.3 $outputs/$case/$case-B1MAP-thresh.nii.gz #threshold from 0.3 to 1.3
+fslmaths $cest/$case/*-B1map.nii -thr 0.3 -uthr 1.3 $outputs/$case/$case-B1MAP-thresh.nii.gz #threshold from 0.3 to 1.3
 fslmaths $outputs/$case/$case-B1MAP-thresh.nii.gz -bin $outputs/$case/$case-b1.nii.gz #binarize thresholded B1 map
 #######################################################################################################
 ## ALIGN FSL FAST OUTPUT TO GLUCEST IMAGES ##
 echo "## ALIGN FSL FAST OUTPUT TO GLUCEST IMAGES ##"
 #check after running structural script to make sure that ONM vs Terra branching isn't needed in this chunk
 
-/project/bbl_projects/apps/melliott/scripts/extract_slice2.sh -MultiLabel $outputs/$case/structural/fast/${case}_seg.nii.gz $cest/$case/$case-B0B1CESTMAP.nii $outputs/$case/fast/$case-2d-FAST.nii
-gzip $cest/$case/fast/$case-2d-FAST.nii  
-/project/bbl_projects/apps/melliott/scripts/extract_slice2.sh $outputs/$case/structural/fast/${case}_prob_1.nii.gz $cest/$case/$case-B0B1CESTMAP.nii $outputs/$case/fast/$case-2d-FASTGMprob.nii
-gzip $cest/$case/fast/$case-2d-FASTGMprob.nii
+/project/bbl_projects/apps/melliott/scripts/extract_slice2.sh -MultiLabel $outputs/$case/structural/fast/${case}_seg.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/fast/$case-2d-FAST.nii
+gzip $outputs/$case/fast/$case-2d-FAST.nii  #FAST 3-part segmentation in 2D CEST slab (no partial volumes or probabilities, just segmentation 1 - 3ß segmentation)
+/project/bbl_projects/apps/melliott/scripts/extract_slice2.sh $outputs/$case/structural/fast/${case}_prob_1.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/fast/$case-2d-FASTGMprob.nii
+gzip $outputs/$case/fast/$case-2d-FASTGMprob.nii #probabalistic GM mask in 2D CEST slab
 #######################################################################################################
 ## APPLY THRESHOLDED B0 MAP, B1 MAP, and TISSUE MAP (CSF removed) TO GLUCEST IMAGES ##
 echo "## APPLY THRESHOLDED B0 MAP, B1 MAP, and TISSUE MAP (CSF removed) TO GLUCEST IMAGES ##"
 #exclude voxels with B0 offset greater than +- 1 pmm from GluCEST images
-fslmaths $cest/$case/$case-B0B1CESTMAP.nii -mul $cest/$case/$case-b0.nii.gz $cest/$case/$case-CEST_b0thresh.nii.gz
+fslmaths $cest/$case/*-B0B1CESTmap.nii -mul $outputs/$case/$case-b0.nii.gz $outputs/$case/$case-CEST_b0thresh.nii.gz
 #exclude voxels with B1 values outside the range of 0.3 to 1.3 from GluCEST images
-fslmaths $cest/$case/$case-CEST_b0thresh.nii.gz -mul $cest/$case/$case-b1.nii.gz $cest/$case/$case-CEST_b0b1thresh.nii.gz
+fslmaths $outputs/$case/$case-CEST_b0thresh.nii.gz -mul $outputs/$case/$case-b1.nii.gz $outputs/$case/$case-CEST_b0b1thresh.nii.gz
 #exclude CSF voxels from GluCEST images
-fslmaths $cest/$case/fast/$case-2d-FAST.nii.gz -thr 2 $cest/$case/fast/$case-tissuemap.nii.gz
-fslmaths $cest/$case/fast/$case-tissuemap.nii.gz -bin $cest/$case/fast/$case-tissuemap-bin.nii.gz
-fslmaths $cest/$case/$case-CEST_b0b1thresh.nii.gz -mul $cest/$case/fast/$case-tissuemap-bin.nii.gz $cest/$case/$case-CEST-finalthresh.nii.gz
+fslmaths $outputs/$case/fast/$case-2d-FAST.nii.gz -thr 2 $outputs/$case/fast/$case-tissuemap.nii.gz
+fslmaths $outputs/$case/fast/$case-tissuemap.nii.gz -bin $outputs/$case/fast/$case-tissuemap-bin.nii.gz #make non-CSF mask from FAST segmentation
+fslmaths $outputs/$case/$case-CEST_b0b1thresh.nii.gz -mul $outputs/$case/fast/$case-tissuemap-bin.nii.gz $outputs/$case/$case-CEST-finalthresh.nii.gz #apply non-CSF mask - ALSO skull-strips ONM CEST images!!!
 #######################################################################################################
 ## MASK THE PROCESSED GLUCEST IMAGE ##
 echo "## MASK THE PROCESSED GLUCEST IMAGE ##"
-fslmaths $cest/$case/$case-B1MAP.nii -bin $outputs/$case/CEST-masktmp.nii.gz
-fslmaths $outputs/$case/CEST-masktmp.nii.gz -ero -kernel sphere 1 $outputs/$case/CEST-masktmp-er1.nii.gz
+fslmaths $cest/$case/*-B1map.nii -bin $outputs/$case/CEST-masktmp.nii.gz
+fslmaths $outputs/$case/CEST-masktmp.nii.gz -ero -kernel sphere 1 $outputs/$case/CEST-masktmp-er1.nii.gz #ero: Erode by zeroing non-zero voxels when zero voxels found in kernel
 fslmaths $outputs/$case/CEST-masktmp-er1.nii.gz -ero -kernel sphere 1 $outputs/$case/CEST-masktmp-er2.nii.gz
 fslmaths $outputs/$case/CEST-masktmp-er2.nii.gz -ero -kernel sphere 1 $outputs/$case/$case-CEST-mask.nii.gz
 fslmaths $outputs/$case/$case-CEST-finalthresh.nii.gz -mul $outputs/$case/$case-CEST-mask.nii.gz $outputs/$case/$case-GluCEST.nii.gz #final processed GluCEST Image
@@ -99,13 +112,12 @@ fslmaths $outputs/$case/$case-CEST-finalthresh.nii.gz -mul $outputs/$case/$case-
 #clean up and organize, whistle while you work 
 ## check this!!!
 echo "clean up and organize"
-mv -f $outputs/$case/*masktmp* $log_files
-mv -f $outputs/$case/*log* $log_files
-mv -f $outputs/$case/$case-B0MAP-pos.nii.gz $log_files/$case-b0MAP-pos.nii.gz
-mv -f $outputs/$case/$case-B0MAP-thresh.nii.gz $log_files/$case-B0MAP-thresh.nii.gz
-mv -f $outputs/$case/$case-B1MAP-thresh.nii.gz $log_files/$case-B1MAP-thresh.nii.gz
+mv -f $outputs/$case/*masktmp* $logdir
+mv -f $outputs/$case/$case-B0MAP-pos.nii.gz $logdir/$case-b0MAP-pos.nii.gz
+mv -f $outputs/$case/$case-B0MAP-thresh.nii.gz $logdir/$case-B0MAP-thresh.nii.gz
+mv -f $outputs/$case/$case-B1MAP-thresh.nii.gz $logdir/$case-B1MAP-thresh.nii.gz
 
-cp $cest/$case/$case-B0MAP.nii $cest/$case/$case-B1MAP.nii $cest/$case/$case-B0B1CESTMAP.nii $outputs/$case/orig_data
+cp $cest/$case/*-B0map.nii $cest/$case/*-B1map.nii $cest/$case/*-B0B1CESTmap.nii $outputs/$case/orig_data
 #######################################################################################################
 ## REGISTER MNI HARVARD OXFORD ATLAS TO UNI IMAGES OR MPRAGE AND GLUCEST IMAGES ##
 echo "## REGISTER MNI HARVARD OXFORD ATLAS TO STRUCT AND GLUCEST IMAGES ##"
@@ -115,14 +127,16 @@ echo "## REGISTER MNI HARVARD OXFORD ATLAS TO STRUCT AND GLUCEST IMAGES ##"
 #Harvard Oxford Atlases
 for atlas in cort sub
 do
-    if $scantype="Terra"
-    antsApplyTransforms -d 3 -r $outputs/$case/structural/$case-UNI-masked.nii.gz -i $templates/HarvardOxford-$atlas-maxprob-thr25-0.8mm.nii.gz -n MultiLabel -o $outputs/$case/atlases/$case-HarvardOxford-$atlas.nii.gz  -t [$structural/$case/structural/MNI_transforms/$case-UNIinMNI-0GenericAffine.mat,1] -t $structural/$case/structural/MNI_transforms/$case-UNIinMNI-1InverseWarp.nii.gz
-    /project/bbl_projects/apps/melliott/scripts/extract_slice2.sh -MultiLabel $outputs/$case/structural/atlases/$case-HarvardOxford-$atlas.nii.gz $cest/$case/$case-B0B1CESTmap.nii $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii
+    if [ $scantype == "Terra" ]
+    then
+    antsApplyTransforms -d 3 -r $outputs/$case/structural/$case-UNI-masked.nii.gz -i $templates/HarvardOxford-$atlas-maxprob-thr25-0.8mm.nii.gz -n MultiLabel -o $outputs/$case/structural/atlases/$case-HarvardOxford-$atlas.nii.gz  -t [$outputs/$case/structural/MNI_transforms/$case-UNIinMNI-0GenericAffine.mat,1] -t $outputs/$case/structural/MNI_transforms/$case-UNIinMNI-1InverseWarp.nii.gz
+    /project/bbl_projects/apps/melliott/scripts/extract_slice2.sh -MultiLabel $outputs/$case/structural/atlases/$case-HarvardOxford-$atlas.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii
     gzip $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii
     fslmaths $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii.gz -mul $outputs/$case/fast/$case-tissuemap-bin.nii.gz $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii.gz
-    else
-    antsApplyTransforms -d 3 -r $outputs/$case/structural/$case-mprage-masked.nii.gz -i $mni_templates/HarvardOxford/HarvardOxford-$atlas-maxprob-thr25-0.8mm.nii.gz -n MultiLabel -o $structural/$participant/$session/atlases/$case-HarvardOxford-$atlas.nii.gz  -t [$structural/$case/structural/MNI_transforms/$case-mprageinMNI-0GenericAffine.mat,1] -t $structural/$case/structural/MNI_transforms/$case-mprageinMNI-1InverseWarp.nii.gz
-    /project/bbl_projects/apps/melliott/scripts/extract_slice2.sh -MultiLabel $outputs/$case/structural/atlases/$case-HarvardOxford-$atlas.nii.gz $cest/$case/$case-B0B1CESTmap.nii $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii
+    elif [ $scantype == "ONM" ]
+    then
+    antsApplyTransforms -d 3 -r $outputs/$case/structural/$case-mprage-masked.nii.gz -i $templates/HarvardOxford-$atlas-maxprob-thr25-0.8mm.nii.gz -n MultiLabel -o $outputs/$case/structural/atlases/$case-HarvardOxford-$atlas.nii.gz  -t [$outputs/$case/structural/MNI_transforms/$case-mprageinMNI-0GenericAffine.mat,1] -t $outputs/$case/structural/MNI_transforms/$case-mprageinMNI-1InverseWarp.nii.gz
+    /project/bbl_projects/apps/melliott/scripts/extract_slice2.sh -MultiLabel $outputs/$case/structural/atlases/$case-HarvardOxford-$atlas.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii
     gzip $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii
     fslmaths $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii.gz -mul $outputs/$case/fast/$case-tissuemap-bin.nii.gz $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii.gz
     fi
@@ -130,10 +144,14 @@ done
 #inverse matrix brings things back to native space 
 #######################################################################################################
 
-echo -e "\n$case SUCCESFULLY PROCESSED\n\n\n"
-)  | tee "$logfile"
+
+# checking that some output files exist (if prior steps exited with errors, these files do not exist)
+if [ -f $outputs/$case/$case-GluCEST.nii.gz ] \
+	&& [ -f $outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii.gz ]
+then	
+	echo -e "\n$case SUCCESFULLY PROCESSED.\n\n\n"
 else
-echo "$case is either missing data or already processed. Will not process"
-sleep 1.5
+	echo -e "\n$case seems to have some issues.\n\n\n"
 fi
-done
+
+)  | tee "$logfile"

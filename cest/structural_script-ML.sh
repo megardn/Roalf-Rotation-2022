@@ -16,6 +16,13 @@
 	#UNI to MNI registration with ANTS SyN (rigid+affine+deformable syn)
 
 #######################################################################################################
+#INPUT FILES:
+   #structural niftis: $niftis/$case/*INV2.nii.gz & $niftis/$case/*UNI_Images.nii.gz OR $niftis/$case/*mprage.nii.gz
+
+#OUTPUTS:
+   #masked, bias-corrected and segmented structural image (INV2 or mprage): outputs in structural/fast
+   #structural image registered to upsampled MNI template ($structural/$case/structural/MNI_transforms/$case-*inMNI-*) and .mat file of transform
+#######################################################################################################
 ## HELPFUNCTION ##
 helpFunction()
 {
@@ -157,8 +164,8 @@ then
 fast -n 3 -t 1 -g -p -o $structural/$case/structural/fast/$case $structural/$case/structural/$case-mprage-processed.nii.gz
 fi
 #######################################################################################################
-## UNI TO MNI152 0.8MM BRAIN REGISTRATION ##
-echo "## UNI TO MNI152 0.8MM BRAIN REGISTRATION ##"
+## STRUCTURAL TO MNI152 0.8MM BRAIN REGISTRATION ##
+echo "## STRUCTURAL TO MNI152 0.8MM BRAIN REGISTRATION ##"
 
 if [ $scantype == "Terra" ]
 then
