@@ -8,11 +8,24 @@
 
 #The processing pipeline includes:
 #B0 and B1 map thresholding of GluCEST images
-#CSF removal from GluCEST images 
-#GluCEST brain masking - now in pyglucest???
+#CSF removal from GluCEST images  
+#GluCEST brain (re)masking
 #registration of atlases from MNI space to participant UNI or MPRAGE images
 #registration of FAST segmentation to GluCEST images
 #generation HarvardOxford cortical and subcortical masks
+#######################################################################################################
+#INPUTS: 
+   #GUI CEST niftis ($cest/$case/*-B0map.nii, $cest/$case/*-B1map.nii & $cest/$case/*-B0B1CESTmap.nii)
+   #FAST segmentations of structural images from structural_script-ML.sh
+      # 3-part segmentation ($outputs/$case/structural/fast/${case}_seg.nii.gz)
+      # GM segmentation ($outputs/$case/structural/fast/${case}_prob_1.nii.gz)
+#OUTPUTS:
+  #FAST 3-part segmentation in 2D CEST slab ($outputs/$case/fast/$case-2d-FAST.nii)
+  #probabalistic GM mask in 2D CEST slab ($outputs/$case/fast/$case-2d-FASTGMprob.nii)
+  #non-CSF segmentation ($outputs/$case/fast/$case-tissuemap-bin.nii.gz)
+  #non-CSF mask ($outputs/$case/fast/$case-tissuemap-bin.nii.gz)
+  #thresholded, brain-masked and CSF-excluded GluCEST image ($outputs/$case/$case-GluCEST.nii.gz)
+  #Harvard Cortical and Subcortical Atlases transformed into native space of CEST slab w/ CSF removed ($outputs/$case/atlases/$case-2d-HarvardOxford-$atlas.nii.gz)
 #######################################################################################################
 ## HELPFUNCTION ##
 helpFunction()
@@ -73,9 +86,9 @@ echo "## ALIGN FSL FAST OUTPUT TO GLUCEST IMAGES ##"
 #check after running structural script to make sure that ONM vs Terra branching isn't needed in this chunk
 
 /project/bbl_projects/apps/melliott/scripts/extract_slice2.sh -MultiLabel $outputs/$case/structural/fast/${case}_seg.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/fast/$case-2d-FAST.nii
-gzip $outputs/$case/fast/$case-2d-FAST.nii  
+gzip $outputs/$case/fast/$case-2d-FAST.nii  #FAST 3-part segmentation in 2D CEST slab (no partial volumes or probabilities, just segmentation 1 - 3ß segmentation)
 /project/bbl_projects/apps/melliott/scripts/extract_slice2.sh $outputs/$case/structural/fast/${case}_prob_1.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/fast/$case-2d-FASTGMprob.nii
-gzip $outputs/$case/fast/$case-2d-FASTGMprob.nii
+gzip $outputs/$case/fast/$case-2d-FASTGMprob.nii #probabalistic GM mask in 2D CEST slab
 #######################################################################################################
 ## APPLY THRESHOLDED B0 MAP, B1 MAP, and TISSUE MAP (CSF removed) TO GLUCEST IMAGES ##
 echo "## APPLY THRESHOLDED B0 MAP, B1 MAP, and TISSUE MAP (CSF removed) TO GLUCEST IMAGES ##"
@@ -85,13 +98,13 @@ fslmaths $cest/$case/*-B0B1CESTmap.nii -mul $outputs/$case/$case-b0.nii.gz $outp
 fslmaths $outputs/$case/$case-CEST_b0thresh.nii.gz -mul $outputs/$case/$case-b1.nii.gz $outputs/$case/$case-CEST_b0b1thresh.nii.gz
 #exclude CSF voxels from GluCEST images
 fslmaths $outputs/$case/fast/$case-2d-FAST.nii.gz -thr 2 $outputs/$case/fast/$case-tissuemap.nii.gz
-fslmaths $outputs/$case/fast/$case-tissuemap.nii.gz -bin $outputs/$case/fast/$case-tissuemap-bin.nii.gz
-fslmaths $outputs/$case/$case-CEST_b0b1thresh.nii.gz -mul $outputs/$case/fast/$case-tissuemap-bin.nii.gz $outputs/$case/$case-CEST-finalthresh.nii.gz
+fslmaths $outputs/$case/fast/$case-tissuemap.nii.gz -bin $outputs/$case/fast/$case-tissuemap-bin.nii.gz #make non-CSF mask from FAST segmentation
+fslmaths $outputs/$case/$case-CEST_b0b1thresh.nii.gz -mul $outputs/$case/fast/$case-tissuemap-bin.nii.gz $outputs/$case/$case-CEST-finalthresh.nii.gz #apply non-CSF mask - ALSO skull-strips ONM CEST images!!!
 #######################################################################################################
 ## MASK THE PROCESSED GLUCEST IMAGE ##
 echo "## MASK THE PROCESSED GLUCEST IMAGE ##"
 fslmaths $cest/$case/*-B1map.nii -bin $outputs/$case/CEST-masktmp.nii.gz
-fslmaths $outputs/$case/CEST-masktmp.nii.gz -ero -kernel sphere 1 $outputs/$case/CEST-masktmp-er1.nii.gz
+fslmaths $outputs/$case/CEST-masktmp.nii.gz -ero -kernel sphere 1 $outputs/$case/CEST-masktmp-er1.nii.gz #ero: Erode by zeroing non-zero voxels when zero voxels found in kernel
 fslmaths $outputs/$case/CEST-masktmp-er1.nii.gz -ero -kernel sphere 1 $outputs/$case/CEST-masktmp-er2.nii.gz
 fslmaths $outputs/$case/CEST-masktmp-er2.nii.gz -ero -kernel sphere 1 $outputs/$case/$case-CEST-mask.nii.gz
 fslmaths $outputs/$case/$case-CEST-finalthresh.nii.gz -mul $outputs/$case/$case-CEST-mask.nii.gz $outputs/$case/$case-GluCEST.nii.gz #final processed GluCEST Image
