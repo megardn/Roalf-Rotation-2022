@@ -301,6 +301,8 @@ scanlist_clean <- scanlist %>%
 table(scanlist_clean$scantime)
 ```
 
+## Operationalizing Change
+
 Ok, now we calculate change from baseline to each endpoint (absolute, percentage, and slope). Change is defined as final score - baseline score, so a negative value means final<baseline which means sxs improved! (except GAFC, where positive -> sxs improved)
 
 ``` {r}
@@ -547,8 +549,6 @@ sops_change_meds.life %>%
 # CEST values -> FINAL DF
 
 # Modeling
-
-## SIPS/SOPS as Change
 
 # Appendix
 ## Unused Med Dataframes
