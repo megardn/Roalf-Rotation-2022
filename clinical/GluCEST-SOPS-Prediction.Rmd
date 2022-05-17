@@ -8,7 +8,7 @@ output: html_document
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot)
 ```
 
 **NOTES TO SELF**
@@ -430,9 +430,130 @@ medswide <- meds %>%
   select(BBLID, DOCOLLECT, ID, count, MEDICINE, NOTES, IS_CURRENT) %>%
   mutate(BBLID=as.factor(BBLID)) %>%
   pivot_wider(., names_from = count, values_from=c(MEDICINE, NOTES, IS_CURRENT)) # pivot
+
+#get subset
+meds_reduced <- meds %>%
+  select(BBLID, DOCOLLECT, MED_COLLECT, NOTES, MEDICINE, PHARMCLASS, DOMED_START, DOMED_END, IS_CURRENT)
 ```
 
-Merge and keep med info at time of scan as well as time of each SOPS endpoint assessment. We'll restrict the meds to be within 
+Trying to add PNC data to see if that will help get more baseline info
+
+```{r}
+pnc.meds <- read.csv("data/n1601_health_with_meds_20170421.csv", header = TRUE, stringsAsFactors = F, na ="") %>%
+  mutate(BBLID=as.factor(bblid)) %>%
+  select(-bblid)
+skim(pnc.meds)
+
+#get managable subset of scan list
+scan_dates <- sops_change_dx %>%
+  select(BBLID, date7t, observation) %>%
+  distinct()
+
+pnc.meds_scan_date <- inner_join(scan_dates, pnc.meds, by="BBLID") %>%
+  distinct(observation, .keep_all = T)
+n_unique(pnc.meds_scan_date$BBLID)
+```
+
+Inferring based on PNC data collection window that all meds are within study range, will add into lifetime calculations. 
+
+Lets go back and look at lifetime:
+
+```{r}
+#get managable subset of endpoint list
+end_dates <- sops_change_dx %>%
+  select(BBLID, DOSIPS, observation) %>%
+  distinct()
+#merge
+end_date_med <- inner_join(end_dates, meds_reduced, by="BBLID")
+
+#ok, keep only rows where med is current to 7T
+med_lifetime <- end_date_med %>%
+  filter(is.na(DOMED_START) | DOSIPS > DOMED_START) %>% #keep if med is STARTED BEFORE SOPS end
+  group_by(observation) %>%
+  mutate(count = row_number()) %>% #add counts so i can pivot after
+  ungroup()
+med_lifetime$MEDICINE[is.na(med_lifetime$MEDICINE)] <- "empty entry"
+skim(med_lifetime)
+
+#trying to find distinct meds for each observation
+med_lifetime_dist <- med_lifetime %>%
+  group_by(observation) %>%
+  distinct(MEDICINE, .keep_all = T) %>% #keep distinct
+  mutate(count=row_number()) %>% #update counts so i can pivot after
+  ungroup() %>%
+  select(BBLID, DOSIPS, observation, MEDICINE, NOTES, count)
+table(med_lifetime_dist$MEDICINE)
+
+#pivot
+med_lifetime_dist.wide <- pivot_wider(med_lifetime_dist, id_cols=observation, names_from = count, values_from=c(MEDICINE, NOTES)) %>% # pivot
+  select_if(~!all(is.na(.))) #drop any col that's totally empty
+n_unique(med_lifetime_dist.wide$observation)
+sum(is.na(med_lifetime_dist.wide$MEDICINE_1))
+```
+
+Because there's med info for all subjects, if an individual only has `empty entry` value then we can infer that they are not taking any medications.
+
+Integrate PNC meds:
+
+```{r}
+pnc.meds.only <- pnc.meds_scan_date %>%
+  select(observation, 22:32)
+
+med_lifetime_comp <- full_join(med_lifetime_dist.wide, pnc.meds.only, by="observation")
+```
+
+Save out and manually code for psych rx:
+
+```{r}
+write.csv(med_lifetime_comp, "data/med_lifetime_comp.csv", row.names=FALSE, na="")
+```
+
+Read back in and merge coded lifetime meds:
+
+```{r}
+meds.coded <- read.csv("data/med_lifetime_comp.CODED.csv", header = TRUE, stringsAsFactors = F, na="") %>%
+  select(observation, psych.rx_life)
+
+sops_change_meds.life <- left_join(sops_change_dx, meds.coded, by="observation")
+n_unique(sops_change_meds.life$observation)
+#skim(sops_change_meds.life)
+```
+
+Look at correlations between lifetime psych rx and diagnosis
+
+```{r}
+kruskal.test(sops_change_meds.life$psych.rx_life~sops_change_meds.life$AXIS1_DESC1)
+ggplot(sops_change_meds.life) + 
+  geom_count(aes(x = factor(AXIS1_DX1), y = as.factor(psych.rx_life))) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+sops_change_meds.life %>% 
+  group_by(BBLID) %>%
+  sample_n(1) %>% #random selection
+  ggplot(aes(x = AXIS1_DX1, y = slope.gafc)) +
+  geom_point(aes(color=as.factor(psych.rx_life)), show.legend = TRUE) +
+  theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  ggtitle("Change in GAF Items vs Axis 1 Dx")
+
+sops_change_meds.life %>% 
+  group_by(BBLID) %>%
+  sample_n(1) %>% #random selection
+  ggplot(aes(x = AXIS1_DX1, y = slope.sops_tot )) +
+  geom_point(aes(color=as.factor(psych.rx_life)), show.legend = TRUE) +
+  theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  ggtitle("Change in SOPS Total Score vs Axis 1 Dx")
+```
+
+# CEST values -> FINAL DF
+
+# Modeling
+
+## SIPS/SOPS as Change
+
+# Appendix
+## Unused Med Dataframes
+
+Merge and keep med info at time of scan as well as time of each SOPS endpoint assessment. 
 
 ```{r}
 sops_change_meds <- left_join(sops_change_dx, medswide, by="BBLID")
@@ -503,8 +624,6 @@ sops_change_meds.final %>%
   select(contains("MEDICINE")) %>%
   unlist() %>%
   table()
-
-#see med date relative to scan d
 ```
 
 NOTES:
@@ -528,15 +647,6 @@ lifetime indicator - dont filter by date assessed, just if date-rx-start is < en
 Test using the DOMED_START and DOMED_END to only capture meds that are explicitly current for 7T scan
 
 ```{r}
-#get subset
-meds_reduced <- meds %>%
-  select(BBLID, DOCOLLECT, MED_COLLECT, NOTES, MEDICINE, PHARMCLASS, DOMED_START, DOMED_END, IS_CURRENT)
-
-#get managable subset of scan list
-scan_dates <- sops_change_dx %>%
-  select(BBLID, date7t, observation) %>%
-  distinct()
-
 #merge
 scan_date_med <- inner_join(scan_dates, meds_reduced, by="BBLID")
 
@@ -561,29 +671,9 @@ scan.meds.current_wide.filt <- scan_meds_current_wide %>%
   select_if(~!all(is.na(.))) #drop any col that's totally empty
 ```
 
-Trying to add PNC data to see if that will help get more baseline info
+In the meantime I'll try to find meds current to endpoint SOPs.
 
 ```{r}
-pnc.meds <- read.csv("data/n1601_health_with_meds_20170421.csv", header = TRUE, stringsAsFactors = F, na ="") %>%
-  mutate(BBLID=as.factor(bblid)) %>%
-  select(-bblid)
-skim(pnc.meds)
-
-pnc.meds_scan_date <- inner_join(scan_dates, pnc.meds, by="BBLID") %>%
-  distinct(BBLID, date7t, .keep_all = T)
-n_unique(pnc.meds_scan_date$BBLID)
-```
-
-Waiting on Kosha to get the dates, hold off for now. In the meantime I'll try to find meds current to endpoint SOPs.
-
-```{r}
-#get managable subset of endpoint list
-end_dates <- sops_change_dx %>%
-  select(BBLID, DOSIPS, observation) %>%
-  distinct()
-#merge
-end_date_med <- inner_join(end_dates, meds_reduced, by="BBLID")
-
 #ok, keep only rows where med is current to 7T
 end_date_med_current <- end_date_med %>%
   filter(is.na(DOMED_START) | DOSIPS > DOMED_START) %>% #keep if med is STARTED BEFORE SOPS end
@@ -611,45 +701,3 @@ currentmeds <- right_join(scan.meds.current_wide.filt, end.meds.current_wide.fil
 ```
 
 Actually very narrow range of meds here, but the `empty entry` notes indicate either no medications or no new medications. Therefore I'll need to look back at participant's former meds
-
-Lets go back and look at lifetime:
-
-```{r}
-#ok, keep only rows where med is current to 7T
-med_lifetime <- end_date_med %>%
-  filter(is.na(DOMED_START) | DOSIPS > DOMED_START) %>% #keep if med is STARTED BEFORE SOPS end
-  group_by(observation) %>%
-  mutate(count = row_number()) %>% #add counts so i can pivot after
-  ungroup()
-med_lifetime$MEDICINE[is.na(med_lifetime$MEDICINE)] <- "empty entry"
-skim(med_lifetime)
-
-#trying to find distinct meds for each observation
-med_lifetime_dist <- med_lifetime %>%
-  group_by(observation) %>%
-  distinct(MEDICINE, .keep_all = T) %>% #keep distinct
-  mutate(count=row_number()) %>% #update counts so i can pivot after
-  ungroup() %>%
-  select(BBLID, DOSIPS, observation, MEDICINE, NOTES, count)
-table(med_lifetime_dist$MEDICINE)
-
-#pivot
-med_lifetime_dist.wide <- pivot_wider(med_lifetime_dist, id_cols=observation, names_from = count, values_from=c(MEDICINE, NOTES)) %>% # pivot
-  select_if(~!all(is.na(.))) #drop any col that's totally empty
-n_unique(med_lifetime_dist.wide$observation)
-sum(is.na(med_lifetime_dist.wide$MEDICINE_1))
-```
-
-Because there's med info for all subjects, if an individual only has `empty entry` value then we can infer that they are not taking any medications.
-
-```{r}
-write.csv(med_lifetime_dist.wide, "data/med_lifetime_dist.wide.csv", row.names=FALSE, na="")
-```
-
-# CEST values -> FINAL DF
-
-# Modeling
-
-## SIPS/SOPS as Change
-
-
