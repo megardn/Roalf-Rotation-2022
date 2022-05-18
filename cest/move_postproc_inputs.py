@@ -16,27 +16,36 @@ while i < len(subs):
     
     #index subjects
     sub = subs[i]
+    #ignore random text files
+    if sub.endswith('.txt'):
+        print("ignoring text file")
 
-    sub_path = os.path.join(from_data, sub)
+    else:
+        sub_path = os.path.join(from_data, sub)
 
-    for ses in os.listdir(sub_path):
+        for ses in os.listdir(sub_path):
+            ses_path=os.path.join(sub_path, ses)
+            #ignore empty session directories - not actually working but whatever, moving on
+            
+            if len(os.listdir(ses_path)) == 0:
+                print(ses+" is empty, moving on")
 
-        ses_path = os.path.join(sub_path, ses, 'cest')
-
-        # make to_data folder for that subject
-        os.system(' '.join(['mkdir', os.path.join(to_data, sub+'_'+ses), '-p']))
+            else:
+                # make to_data folder for that subject
+                os.system(' '.join(['mkdir', os.path.join(to_data, sub+'_'+ses), '-p']))
         
-        # copy the raw cest folder contents in 
-        os.system(' '.join(['cp', 
-                           os.path.join(from_data, sub, ses, 'cest/cest_gui_niftis', '*.n*'), 
-                           os.path.join(to_data, sub+'_'+ses),
-                           '-r']))
+                # copy the raw cest folder contents in 
+                os.system(' '.join(['cp', 
+                            os.path.join(sub_path, ses, 'cest/cest_gui_niftis', '*.n*'), 
+                            os.path.join(to_data, sub+'_'+ses),
+                            '-r']))
 
-        # also grab structural
-        os.system(' '.join(['cp', 
-                           os.path.join(from_data, sub, ses, 'structural', '*.n*'), 
-                           os.path.join(to_data, sub+'_'+ses),
-                           '-r']))
+                # also grab structural
+                os.system(' '.join(['cp', 
+                            os.path.join(sub_path, ses, 'structural', '*.n*'), 
+                            os.path.join(to_data, sub+'_'+ses),
+                            '-r']))
+
 
     i = i + 1
-
+print("done")
