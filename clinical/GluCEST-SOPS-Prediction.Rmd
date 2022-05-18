@@ -114,7 +114,7 @@ Load diagnosis data from oracle ID and remove 22q subj
 
 ```{r}
 #load diagnosis data
-redcap <- read.csv("data/oracle_diagnoses_all.csv", header = TRUE, stringsAsFactors = F, na = c("", "null")) %>% 
+redcap <- read.csv("data/oracle_diagnoses_all.csv", header = TRUE, stringsAsFactors = F, na = c("", "null", "..", ".")) %>% 
   select(BBLID, DODIAGNOSIS, HSTATUS, AGEONSET_CLINICRISK | contains("AXIS1_")) %>% #get manageable subset of data
   mutate(DODIAGNOSIS = as.Date(DODIAGNOSIS),
          BBLID=as.factor(BBLID))
@@ -364,7 +364,7 @@ Adding sex, DOB/age, race (csv adapted from 7T list from David).
 
 ```{r}
 #load demographics (adapted from 7T list from David)
-demo <- read.csv("data/7t_demographics.csv", header = TRUE, stringsAsFactors = TRUE, na = "") %>%
+demo <- read.csv("data/7t_demographics.csv", header = TRUE, stringsAsFactors = TRUE, na = c("", "..", ".")) %>%
   mutate(sex = as.factor(Sex_1M),
          Ethnicity = as.factor(Ethnicity),
          DOB = as.Date(DOB, format = "%m/%d/%y"),
@@ -387,28 +387,102 @@ sops_change_dx <- left_join(sops_change_demo, redcap, by="BBLID")
 any(is.na(sops_change_dx$AXIS1_DX1)) #no primary dx missing
 
 #calculate datediff from dx to scan
-sops_change_dx <- sops_change_dx %>%
+sops_change_dx.base <- sops_change_dx %>%
   mutate(dx_7t_diff = as.numeric(difftime(DODIAGNOSIS,date7t, units = "days"))) %>%
   arrange(abs(dx_7t_diff)) %>%
   group_by(observation) %>%
   slice_head() %>% #keep only closest dx
   ungroup() %>%
-  select_if(~!all(is.na(.))) #drop any col that's totally empty
+  select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
+  rename_with(.cols = 45:68, function(x){paste0("base.", x)})
 
 #make sure no obs lost
-n_unique(sops_change_dx$observation)
-summary(sops_change_dx$dx_7t_diff)
+n_unique(sops_change_dx.base$observation)
+summary(sops_change_dx.base$dx_7t_diff)
 #skim(sops_change_dx)
 ```
-
-Just keeping diagnosis at baseline for now! It's probable that some dx changed over the course of the study but not what we're interested in ATM. 
 
 linear model for fun
 
 ```{r}
-bs.fit2 <- lm(slope.sops_tot ~ AXIS1_DX1, data=sops_change_dx)
+bs.fit2 <- lm(slope.sops_tot ~ base.AXIS1_DX1, data=sops_change_dx.base)
 Anova(bs.fit2)
 ```
+
+
+Ok, now i'll add in dx at endpoint (since dx ~ remission status that the papers I've found were assessing most)
+
+```{r}
+#calculate datediff from dx to scan
+sops_change_dx.end <- sops_change_dx %>%
+  mutate(dx_end_diff = as.numeric(difftime(DODIAGNOSIS,DOSIPS, units = "days"))) %>%
+  arrange(abs(dx_end_diff)) %>%
+  group_by(observation) %>%
+  slice_head() %>% #keep only closest dx
+  ungroup() %>%
+  select(observation, dx_end_diff, DODIAGNOSIS, HSTATUS, AGEONSET_CLINICRISK | contains("AXIS")) %>% #just get dx and observation stuff
+  select_if(~!all(is.na(.))) %>%
+  rename_with(.cols = 3:ncol(.), function(x){paste0("end.", x)}) #add prefix
+
+#make sure no obs lost
+n_unique(sops_change_dx.end$observation)
+summary(sops_change_dx.end$dx_end_diff)
+table(as.factor(sops_change_dx.end$dx_end_diff))
+```
+
+A few diagnoses are very far from endpoint, going to remove any outside 10 days away and merge back in
+
+```{r}
+sops_change_dx.end.filt <- sops_change_dx.end %>%
+  filter(abs(dx_end_diff) <= 10) 
+
+sops_change_dx.final <- left_join(sops_change_dx.base, sops_change_dx.end.filt, by="observation")
+#skim(sops_change_dx.final)
+```
+
+First I'll make an indicator for psychosis/prodrome at baseline or endpoint (since `HSTATUS` cols aren't really great).
+
+```{r}
+all.dx <-   sops_change_dx.final %>% select(contains("AXIS1_DX")) %>% 
+  t %>% c %>% unique
+control.list <- c("V71.09B")
+pro.list<- c("348.4", "348.43", "348.62", "348.42", "348.12", "348.41", "348.11")
+psych.list <- c("295.6", "298.9", "295.4", "295.9")
+other.list <- c("300", "300.23", "311", "309.21", "304.3", "296.35", "V62.82", "309.81", "300.02", "305", "296.36", "303.9", "296.32", "314", "296.25", "296.2", "296.26", "300.3", "296.9", "314.01", "799.90B")
+
+sops_change_dx.final <- sops_change_dx.final %>% #making indicator for each dx category
+  mutate(base.control = if_any(starts_with("base.AXIS1_DX"), ~ .x %in% control.list,1,0),
+         end.control = if_any(starts_with("end.AXIS1_DX"), ~ .x %in% control.list,1,0),
+         base.pro = if_any(starts_with("base.AXIS1_DX"), ~ .x %in% pro.list,1,0),
+         end.pro = if_any(starts_with("end.AXIS1_DX"), ~ .x %in% pro.list,1,0),
+         base.psych = if_any(starts_with("base.AXIS1_DX"), ~ .x %in% psych.list,1,0),
+         end.psych = if_any(starts_with("end.AXIS1_DX"), ~ .x %in% psych.list,1,0),
+         base.otherdx = if_any(starts_with("base.AXIS1_DX"), ~ .x %in% other.list,1,0),
+         end.otherdx = if_any(starts_with("end.AXIS1_DX"), ~ .x %in% other.list,1,0)) %>%
+  mutate(baseline.dx = as.factor(case_when(base.pro == TRUE ~ "pro", #single col of baseline dx
+                                 base.psych == TRUE ~ "psych",
+                                 base.otherdx == TRUE ~ "other",
+                                 base.control == TRUE ~ "none")),
+         end.dx = as.factor(case_when(end.pro == TRUE ~ "pro", #single col of endpoint dx
+                                 end.psych == TRUE ~ "psych",
+                                 end.otherdx == TRUE ~ "other",
+                                 end.control == TRUE ~ "none")),
+         dx_pre.post = paste(baseline.dx, end.dx, sep="-")) #indicator pre-post
+
+table(sops_change_dx.final$dx_pre.post)
+```
+
+No prodromal or psychotic disorder subjects remit
+
+And drop all the extra med columns we don't need
+
+```{r}
+sops_change_dx.filt <- sops_change_dx.final %>%
+  select(!contains("AXIS1"))
+```
+
+
+
 
 ## Medication Info
 
@@ -447,7 +521,7 @@ pnc.meds <- read.csv("data/n1601_health_with_meds_20170421.csv", header = TRUE, 
 skim(pnc.meds)
 
 #get managable subset of scan list
-scan_dates <- sops_change_dx %>%
+scan_dates <- sops_change_dx.final %>%
   select(BBLID, date7t, observation) %>%
   distinct()
 
@@ -462,7 +536,7 @@ Lets go back and look at lifetime:
 
 ```{r}
 #get managable subset of endpoint list
-end_dates <- sops_change_dx %>%
+end_dates <- sops_change_dx.filt %>%
   select(BBLID, DOSIPS, observation) %>%
   distinct()
 #merge
@@ -516,7 +590,7 @@ Read back in and merge coded lifetime meds:
 meds.coded <- read.csv("data/med_lifetime_comp.CODED.csv", header = TRUE, stringsAsFactors = F, na="") %>%
   select(observation, psych.rx_life)
 
-sops_change_meds.life <- left_join(sops_change_dx, meds.coded, by="observation")
+sops_change_meds.life <- left_join(sops_change_dx.filt, meds.coded, by="observation")
 n_unique(sops_change_meds.life$observation)
 #skim(sops_change_meds.life)
 ```
@@ -524,15 +598,15 @@ n_unique(sops_change_meds.life$observation)
 Look at correlations between lifetime psych rx and diagnosis
 
 ```{r}
-kruskal.test(sops_change_meds.life$psych.rx_life~sops_change_meds.life$AXIS1_DESC1)
+kruskal.test(sops_change_meds.life$psych.rx_life~sops_change_meds.life$baseline.dx)
 ggplot(sops_change_meds.life) + 
-  geom_count(aes(x = factor(AXIS1_DX1), y = as.factor(psych.rx_life))) +
+  geom_count(aes(x = factor(baseline.dx), y = as.factor(psych.rx_life))) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 sops_change_meds.life %>% 
   group_by(BBLID) %>%
   sample_n(1) %>% #random selection
-  ggplot(aes(x = AXIS1_DX1, y = slope.gafc)) +
+  ggplot(aes(x = baseline.dx, y = slope.gafc)) +
   geom_point(aes(color=as.factor(psych.rx_life)), show.legend = TRUE) +
   theme(axis.text.x = element_text(angle = 45, hjust=1)) +
   ggtitle("Change in GAF Items vs Axis 1 Dx")
@@ -540,11 +614,13 @@ sops_change_meds.life %>%
 sops_change_meds.life %>% 
   group_by(BBLID) %>%
   sample_n(1) %>% #random selection
-  ggplot(aes(x = AXIS1_DX1, y = slope.sops_tot )) +
+  ggplot(aes(x = baseline.dx, y = slope.sops_tot )) +
   geom_point(aes(color=as.factor(psych.rx_life)), show.legend = TRUE) +
   theme(axis.text.x = element_text(angle = 45, hjust=1)) +
   ggtitle("Change in SOPS Total Score vs Axis 1 Dx")
 ```
+
+Most variation in lifetime meds and clinical change for prodrome observations. 
 
 # CEST values -> FINAL DF
 
