@@ -5,8 +5,8 @@ import re
 #expects dir that stores and *mprage.nii.gz OR *INV2.nii.gz AND *UNI_Images.nii.gz (BBLID_ScanID) 
 
 ###SANDBOX PATHS###
-from_data = '/project/bbl_roalf_cest_predict/data/sandbox/data.pull'
-to_data = '/project/bbl_roalf_cest_predict/data/sandbox/inputs'
+from_data = '/project/bbl_roalf_cest_predict/data/data.pull'
+to_data = '/project/bbl_roalf_cest_predict/data/inputs'
 
 #pull raw data
 subs = os.listdir(from_data)
