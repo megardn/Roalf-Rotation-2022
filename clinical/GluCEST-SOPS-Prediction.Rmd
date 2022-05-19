@@ -8,7 +8,7 @@ output: html_document
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report)
 ```
 
 **NOTES TO SELF**
@@ -303,7 +303,7 @@ table(scanlist_clean$scantime)
 
 ## Operationalizing Change
 
-Ok, now we calculate change from baseline to each endpoint (absolute, percentage, and slope). Change is defined as final score - baseline score, so a negative value means final<baseline which means sxs improved! (except GAFC, where positive -> sxs improved)
+Ok, now we calculate change from baseline to each endpoint (absolute and slope). Change is defined as final score - baseline score, so a negative value means final<baseline which means sxs improved! (except GAFC, where positive -> sxs improved)
 
 ``` {r}
 #calculate change
@@ -316,12 +316,6 @@ sops_change <- scanlist_clean %>%
          abs.delta.sops_g = sops_g - first(sops_g),
          abs.delta.sops_tot = sops_tot - first(sops_tot),
          abs.delta.gafc = GAF_C - first(GAF_C),
-         pct.delta.sops_p = abs.delta.sops_p/first(sops_p)  * 100,
-         pct.delta.sops_n = abs.delta.sops_n/first(sops_n)  * 100,
-         pct.delta.sops_d = abs.delta.sops_d/first(sops_d)  * 100,
-         pct.delta.sops_g = abs.delta.sops_g/first(sops_g)  * 100,
-         pct.delta.sops_tot = abs.delta.sops_tot/first(sops_tot)  * 100,
-         pct.delta.gacf = abs.delta.gafc/first(GAF_C)  * 100,
          delta.sops_time = as.numeric(difftime(DOSIPS,first(DOSIPS), units = "days")),
          slope.sops_p = abs.delta.sops_p/delta.sops_time,
          slope.sops_n = abs.delta.sops_n/delta.sops_time,
@@ -364,19 +358,31 @@ Adding sex, DOB/age, race (csv adapted from 7T list from David).
 
 ```{r}
 #load demographics (adapted from 7T list from David)
-demo <- read.csv("data/7t_demographics.csv", header = TRUE, stringsAsFactors = TRUE, na = c("", "..", ".")) %>%
+demo.phi <- read.csv("data/7t_demographics.csv", header = TRUE, stringsAsFactors = TRUE, na = c("", "..", ".")) %>%
   mutate(sex = as.factor(Sex_1M),
          Ethnicity = as.factor(Ethnicity),
          DOB = as.Date(DOB, format = "%m/%d/%y"),
          BBLID = as.factor(BBLID)) %>%
   select(-Diagnostic_Group, -sex, -Age)
 
-sops_change_demo <- left_join(sops_change, demo, by="BBLID")
-skim(sops_change_demo)
-n_unique(sops_change_demo$observation)
+sops_change_demo.phi <- left_join(sops_change, demo.phi, by="BBLID")
+skim(sops_change_demo.phi)
+n_unique(sops_change_demo.phi$observation)
 ```
 
-Demographic variables have 100% completion
+Demographic variables have 100% completion.
+
+Using DOB to calculate age at scan and at endpoint SOPS, then removing.
+
+```{r}
+sops_change_demo <- sops_change_demo.phi %>%
+  mutate(age_scan = as.numeric(difftime(date7t,DOB, units = "weeks"))/52.25,
+         age_end = as.numeric(difftime(DOSIPS,DOB, units = "weeks"))/52.25) %>%
+  select(-DOB)
+
+summary(sops_change_demo$age_scan)
+summary(sops_change_demo$age_end)
+```
 
 ## Diagnosis
 
@@ -394,7 +400,7 @@ sops_change_dx.base <- sops_change_dx %>%
   slice_head() %>% #keep only closest dx
   ungroup() %>%
   select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
-  rename_with(.cols = 45:68, function(x){paste0("base.", x)})
+  rename_with(.cols = 40:63, function(x){paste0("base.", x)})
 
 #make sure no obs lost
 n_unique(sops_change_dx.base$observation)
@@ -405,7 +411,7 @@ summary(sops_change_dx.base$dx_7t_diff)
 linear model for fun
 
 ```{r}
-bs.fit2 <- lm(slope.sops_tot ~ base.AXIS1_DX1, data=sops_change_dx.base)
+bs.fit2 <- lm(slope.sops_tot ~ base.AXIS1_DX1 + age_scan, data=sops_change_dx.base)
 Anova(bs.fit2)
 ```
 
@@ -468,20 +474,18 @@ sops_change_dx.final <- sops_change_dx.final %>% #making indicator for each dx c
                                  end.otherdx == TRUE ~ "other",
                                  end.control == TRUE ~ "none")),
          dx_pre.post = paste(baseline.dx, end.dx, sep="-")) #indicator pre-post
-
+  
 table(sops_change_dx.final$dx_pre.post)
 ```
 
-No prodromal or psychotic disorder subjects remit
+Diagnosis amongst baseline prodromal and psychotic disorder subjects seem to be largely stable over time.
 
-And drop all the extra med columns we don't need
+And drop all the extra dx columns we don't need
 
 ```{r}
 sops_change_dx.filt <- sops_change_dx.final %>%
-  select(!contains("AXIS1"))
+  select(!contains("AXIS1") & !contains("HSTATUS") & !contains("CONSIDER") & !contains("PRODROMAL") & !contains("POSS_PRO_DX"))
 ```
-
-
 
 
 ## Medication Info
@@ -521,7 +525,7 @@ pnc.meds <- read.csv("data/n1601_health_with_meds_20170421.csv", header = TRUE, 
 skim(pnc.meds)
 
 #get managable subset of scan list
-scan_dates <- sops_change_dx.final %>%
+scan_dates <- sops_change_dx.filt %>%
   select(BBLID, date7t, observation) %>%
   distinct()
 
@@ -595,6 +599,28 @@ n_unique(sops_change_meds.life$observation)
 #skim(sops_change_meds.life)
 ```
 
+
+# CEST values -> FINAL DF
+
+# EDA
+
+Plotting correlations 
+
+```{r fig.width=15, fig.height=15}
+skim(sops_change_meds.life)
+
+sops_change_meds.life %>% 
+  select_if(is.numeric) %>%
+  cor(., use = "pairwise.complete.obs") %>%
+  corrplot(method = "color", 
+           type = "upper",
+           addCoef.col = "black", # Add coefficient of correlation
+           tl.col="black", tl.srt = 45, #Text label color and rotation
+           # hide correlation coefficient on the principal diagonal
+           diag = FALSE 
+           )
+```
+
 Look at correlations between lifetime psych rx and diagnosis
 
 ```{r}
@@ -620,18 +646,67 @@ sops_change_meds.life %>%
   ggtitle("Change in SOPS Total Score vs Axis 1 Dx")
 ```
 
-Most variation in lifetime meds and clinical change for prodrome observations. 
+Most variation in lifetime meds and clinical change for prodrome observations.
 
-# CEST values -> FINAL DF
+Boxplots of baseline dx vs various paramaeters
+
+Looking at baseline diagnosis vs change GAF
+
+```{r}
+ggplot(sops_change_meds.life, aes(x=age_scan, y=slope.gafc, color=baseline.dx)) +
+  geom_point() +
+  xlab("Age at Scan") +
+  ylab("GAF Slope") + 
+  ggtitle("Change in GAF by Observation") + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+```{r}
+ggplot(sops_change_meds.life, aes(x=baseline.dx, y=slope.sops_tot, color=as.factor(psych.rx_life))) +
+  geom_point() +
+  geom_jitter(width = 0.25) +
+  xlab("Baseline Dx") +
+  ylab("Slope of Total SOPS") + 
+  ggtitle("Change in SOPS by Observation") + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
 
 # Modeling
 
+Playing around with [MEMs](https://yury-zablotski.netlify.app/post/mixed-effects-models-1/).
+
+```{r}
+toy.model = lmer(slope.sops_tot ~ baseline.dx + age_scan + (1|BBLID), data=sops_change_meds.life)
+summary(toy.model)
+report(toy.model)
+```
+
+Random slope
+
 # Appendix
+
+## Calculating % Change
+Removed because it resulted in irritating and uninterpretable inf values.
+
+```{r, eval=FALSE}
+sops_change <- sops_change %>% 
+  group_by(bblid_scan) %>%
+  arrange(scantime) %>%
+  mutate(pct.delta.sops_p = abs.delta.sops_p/first(sops_p)  * 100,
+         pct.delta.sops_n = abs.delta.sops_n/first(sops_n)  * 100,
+         pct.delta.sops_d = abs.delta.sops_d/first(sops_d)  * 100,
+         pct.delta.sops_g = abs.delta.sops_g/first(sops_g)  * 100,
+         pct.delta.sops_tot = abs.delta.sops_tot/first(sops_tot)  * 100,
+         pct.delta.gacf = abs.delta.gafc/first(GAF_C)  * 100)
+```
+
 ## Unused Med Dataframes
 
 Merge and keep med info at time of scan as well as time of each SOPS endpoint assessment. 
 
-```{r}
+```{r, eval=FALSE}
 sops_change_meds <- left_join(sops_change_dx, medswide, by="BBLID")
 
 #calculate datediff from meds to scan/SIPS
@@ -669,7 +744,7 @@ ggarrange(sops.med.p, scan.med.p, common.legend = T, legend = "bottom", ncol = 2
 
 Ok, maybe let's restrict to +- 100 days and add back in. Also tried 200 days but didn't add anything
 
-```{r}
+```{r, eval=FALSE}
 #filter down
 meds_baseline <- meds_baseline %>%
   filter(abs(meds_7t_diff) <= 100) %>%
@@ -694,7 +769,7 @@ n_unique(sops_change_meds.final$observation)
 
 Ok, now how to summarize all this medication info into one cohesive value
 
-```{r}
+```{r, eval=FALSE}
 #see how often each med is reported
 sops_change_meds.final %>%
   select(contains("MEDICINE")) %>%
@@ -722,7 +797,7 @@ lifetime indicator - dont filter by date assessed, just if date-rx-start is < en
 
 Test using the DOMED_START and DOMED_END to only capture meds that are explicitly current for 7T scan
 
-```{r}
+```{r, eval=FALSE}
 #merge
 scan_date_med <- inner_join(scan_dates, meds_reduced, by="BBLID")
 
@@ -749,7 +824,7 @@ scan.meds.current_wide.filt <- scan_meds_current_wide %>%
 
 In the meantime I'll try to find meds current to endpoint SOPs.
 
-```{r}
+```{r, eval=FALSE}
 #ok, keep only rows where med is current to 7T
 end_date_med_current <- end_date_med %>%
   filter(is.na(DOMED_START) | DOSIPS > DOMED_START) %>% #keep if med is STARTED BEFORE SOPS end
@@ -772,7 +847,7 @@ end.meds.current_wide.filt <- end_meds_current_wide %>%
 
 This seems to be working, lets try merging baseline and endpoint meds and see what we have
 
-```{r}
+```{r, eval=FALSE}
 currentmeds <- right_join(scan.meds.current_wide.filt, end.meds.current_wide.filt, by="observation")
 ```
 
