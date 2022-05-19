@@ -22,8 +22,8 @@ for b0 in $b0_pathlist
 #B1
 for b1 in $b1_pathlist 
     do
-    sub=$(echo "$b0" | sed -r 's_^(/[^/]*){4}/([^/]*)/.*$_\2_g')
-    ses=$(echo "$b0" | sed -r 's_^(/[^/]*){5}/([^/]*)/.*$_\2_g')   
+    sub=$(echo "$b1" | sed -r 's_^(/[^/]*){4}/([^/]*)/.*$_\2_g')
+    ses=$(echo "$b1" | sed -r 's_^(/[^/]*){5}/([^/]*)/.*$_\2_g')   
 
     if [ ! -f $base/${sub}_${ses}/${sub}-${ses}-B1map.nii ]
     then
@@ -34,8 +34,8 @@ for b1 in $b1_pathlist
 #CEST
 for cest in $cest_pathlist 
     do
-    sub=$(echo "$b0" | sed -r 's_^(/[^/]*){4}/([^/]*)/.*$_\2_g')
-    ses=$(echo "$b0" | sed -r 's_^(/[^/]*){5}/([^/]*)/.*$_\2_g')   
+    sub=$(echo "$cest" | sed -r 's_^(/[^/]*){4}/([^/]*)/.*$_\2_g')
+    ses=$(echo "$cest" | sed -r 's_^(/[^/]*){5}/([^/]*)/.*$_\2_g')   
 
     if [ ! -f $base/${sub}_${ses}/${sub}-${ses}-B0B1CESTmap.nii ]
     then
