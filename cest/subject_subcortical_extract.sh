@@ -2,8 +2,8 @@
 
 #######################################################################################################
 ##DEFINE PATHS## SANDBOX!!!
-inputs=/project/bbl_roalf_cest_predict/data/sandbox/outputs #path to processed GluCEST data from glucest_script.sh
-outputpath=/project/bbl_roalf_cest_predict/data/sandbox/cest_values
+inputs=/project/bbl_roalf_cest_predict/data/outputs #path to processed GluCEST data from glucest_script.sh
+outputpath=/project/bbl_roalf_cest_predict/data/cest_values
 log_file=/project/bbl_roalf_cest_predict/logs/cest_extract.log
 #######################################################################################################
 

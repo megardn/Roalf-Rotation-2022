@@ -13,10 +13,10 @@
 
 #######################################################################################################
 ## DEFINE PATHS ## SANDBOX!!!
-structural=/project/bbl_roalf_cest_predict/data/sandbox/outputs
-niftis=/project/bbl_roalf_cest_predict/data/sandbox/inputs #path to nifti inputs
+structural=/project/bbl_roalf_cest_predict/data/outputs
+niftis=/project/bbl_roalf_cest_predict/data/inputs #path to nifti inputs
 templates=/project/bbl_roalf_cest_predict/templates/ # path to templates
-logdir_base=/project/bbl_roalf_cest_predict/logs/sandbox_structural
+logdir_base=/project/bbl_roalf_cest_predict/logs/structural
 #ANTSPATH=/appl/ANTs-2.3.1/bin/ #added to .bash_profile
 #######################################################################################################
 

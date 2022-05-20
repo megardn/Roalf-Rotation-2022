@@ -6,7 +6,7 @@
 #####################
 
 #paths
-cest=/project/bbl_roalf_cest_predict/data/sandbox/outputs #SANDBOX!
+cest=/project/bbl_roalf_cest_predict/data/outputs
 logdir=/project/bbl_roalf_cest_predict/logs
 cest_logfile=$logdir/cest_postproc_qc.log
 {
