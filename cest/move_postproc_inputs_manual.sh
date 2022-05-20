@@ -4,9 +4,10 @@
 base=/project/bbl_roalf_cest_predict/data/inputs
 
 #mOFC CEST INPUTS
-b0_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/DR/B0MAP/87225_9459_B0MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/B0MAP/92886_9087_B0MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B0map.nii"
-b1_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/132179/9726/data/PR/B1MAP/132179_9726_B1MAP_mOFC_PR.nii /project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/DR/B1MAP/87225_9459_B1MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/B1MAP/92886_9087_B1MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B1map.nii"
-cest_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/132179/9726/data/PR/132179_9726_mOFC_cest_PR.nii /project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/87225_9459_mOFC_cest.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/92886_9087_mOFC_cest_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B0B1CESTmap.nii"
+b0_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/105176/9332/data/DR/B0MAP/105176_9332_B0MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/DR/B0MAP/87225_9459_B0MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/B0MAP/92886_9087_B0MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B0map.nii"
+b1_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/105176/9332/data/DR/B1MAP/105176_9332_B1MAP_mOFC_DR.nii
+ /project/bbl_roalf_cest_predict/data/data.pull/132179/9726/data/PR/B1MAP/132179_9726_B1MAP_mOFC_PR.nii /project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/DR/B1MAP/87225_9459_B1MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/B1MAP/92886_9087_B1MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B1map.nii"
+cest_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/105176/9332/data/DR/105176_9332_mOFC_cest_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/132179/9726/data/PR/132179_9726_mOFC_cest_PR.nii /project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/87225_9459_mOFC_cest.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/92886_9087_mOFC_cest_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B0B1CESTmap.nii"
 
 #B0
 for b0 in $b0_pathlist 
