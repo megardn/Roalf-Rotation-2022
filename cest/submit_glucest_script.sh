@@ -15,53 +15,63 @@
 #generation HarvardOxford cortical and subcortical masks
 #######################################################################################################
 ## DEFINE PATHS ##  QUESTION: IDK why what's up with dicom vs structural paths, switching paths over to outputs dir which holds pyGluCEST nifti and structural_script.sh nifti outputs
-cest=/project/bbl_roalf_cest_predict/data/sandbox/inputs #path to processed GluCEST data inputs
-outputs=/project/bbl_roalf_cest_predict/data/sandbox/outputs #path to structural_script.sh outputs AND where GluCEST outputs will be saved
+cest=/project/bbl_roalf_cest_predict/data/inputs #path to processed GluCEST data inputs
+outputs=/project/bbl_roalf_cest_predict/data/outputs #path to structural_script.sh outputs AND where GluCEST outputs will be saved
 templates=/project/bbl_roalf_cest_predict/templates/ #path to templates
-logdir_base=/project/bbl_roalf_cest_predict/logs/sandbox_cest
+logdir_base=/project/bbl_roalf_cest_predict/logs/cest-postproc
 #######################################################################################################
 
 #######################################################################################################
 ## IDENTIFY CASES FOR PROCESSING ##
 
 for i in $(ls $cest)
-do
-    case=${i##*/}
+    do
+        case=${i##*/}
 
-    #checking that subject has necessary structural data & define scantype
-    if [ -f $outputs/$case/structural/$case-UNI-processed.nii.gz ] && [ -f $outputs/$case/structural/fast/${case}_seg.nii.gz ]
-    then 
-    scantype="Terra"
-    elif [ -f $outputs/$case/structural/$case-mprage-processed.nii.gz ] && [ -f $outputs/$case/structural/fast/${case}_seg.nii.gz ]
-    then 
-    scantype="ONM"
-    else
-    echo "Oh No! Structural Data is missing. Cannot process CEST!"
-    exit
-    fi
+        #checking that subject has necessary structural data & define scantype
+        if [ -f $outputs/$case/structural/$case-UNI-processed.nii.gz ] && [ -f $outputs/$case/structural/fast/${case}_seg.nii.gz ]
+        then 
+        scantype="Terra"
+        elif [ -f $outputs/$case/structural/$case-mprage-processed.nii.gz ] && [ -f $outputs/$case/structural/fast/${case}_seg.nii.gz ]
+        then 
+        scantype="ONM"
+        else
+            echo "Oh No! Structural Data is missing. Cannot process $case!"
+            continue
+        fi
 
-    #check for GluCEST GUI data - update to -f .nii.gz
-    if [ -f $cest/$case/*-B0map.nii ] && [ -f $cest/$case/*-B1map.nii ] && [ -f $cest/$case/*-B0B1CESTmap.nii ] 
-    then
-    sleep 1
-    else
-    echo "Oh No! CEST GUI Data is missing. Cannot process CEST!"
-    exit
-    fi
-    
-    #make directories
-    if [ ! -d $logdir_base ]
-    then 
-    mkdir $logdir_base #Store logfiles here
-    fi
-    logdir=$logdir_base/$case
-    mkdir $logdir 
-    mkdir $outputs/$case/fast
-    mkdir $outputs/$case/orig_data
-    mkdir $outputs/$case/structural/atlases
-    mkdir $outputs/$case/atlases
+        #check for GluCEST GUI data
+        if [ -f $cest/$case/*-B0map.nii ] && [ -f $cest/$case/*-B1map.nii ] && [ -f $cest/$case/*-B0B1CESTmap.nii ] 
+        then
+        sleep 1
+        else
+            echo "Oh No! CEST GUI Data is missing. Cannot process $case!"
+            continue
+        fi
+        
+        #check for data's already processed
+        if [ -f $outputs/$case/$case-GluCEST.nii.gz ] \
+        && [ -f $outputs/$case/atlases/$case-2d-HarvardOxford-sub.nii.gz ]
+        then
+            echo "CEST already post-processed, skipping $case!"
+            continue
+        else
+        sleep 1
+        fi
 
-    # submit job to bsub ~ two -o flags, may be causing issue?
-    bsub -o $logdir/jobinfo.log bash glucest_script.sh -c $cest -o $outputs -m $templates -p $case -t $scantype -l $logdir
+        #make directories
+        if [ ! -d $logdir_base ]
+        then 
+        mkdir $logdir_base #Store logfiles here
+        fi
+        logdir=$logdir_base/$case
+        mkdir $logdir 
+        mkdir $outputs/$case/fast
+        mkdir $outputs/$case/orig_data
+        mkdir $outputs/$case/structural/atlases
+        mkdir $outputs/$case/atlases
 
-done
+        # submit job to bsub ~ two -o flags, may be causing issue?
+        bsub -o $logdir/jobinfo.log bash glucest_script.sh -c $cest -o $outputs -m $templates -p $case -t $scantype -l $logdir
+
+    done
