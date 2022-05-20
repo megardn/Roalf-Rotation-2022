@@ -130,6 +130,8 @@ all_7t.long <- all_7t.long %>% subset(!(BBLID %in% q22$BBLID)) %>% as.data.frame
 
 There are `r length(unique(all_7t.wide$BBLID))` (197) unique subjects who have 7T scans, excluding 22q pts ID'd from Kosha's RedCap data.
 
+
+
 # SIPS/SOPS
 
 Load SIPS data
@@ -296,10 +298,247 @@ scanlist_clean <- scanlist %>%
   drop_na(scantime) %>%
   mutate(scantime=paste(scantime,as.character(row), sep=".")) %>% #number endpoints if subj has more than one
   select(-row)%>%
-  ungroup()
+  ungroup() %>%
+  mutate(observation = paste(bblid_scan, scantime))
 
 table(scanlist_clean$scantime)
+
+scanlist_clean %>% filter(scantime=="base.1") %>%
+  ggplot(aes(x=sips_diff_days)) + geom_dotplot()
 ```
+
+*Keeping data long for now for mixed random effects model!*
+
+# Adding Covariates
+
+## Demographics
+Adding sex, DOB/age, race (csv adapted from 7T list from David).
+
+```{r}
+#load demographics (adapted from 7T list from David)
+demo.phi <- read.csv("data/7t_demographics.csv", header = TRUE, stringsAsFactors = TRUE, na = c("", "..", ".")) %>%
+  mutate(sex = as.factor(Sex_1M),
+         Ethnicity = as.factor(Ethnicity),
+         DOB = as.Date(DOB, format = "%m/%d/%y"),
+         BBLID = as.factor(BBLID)) %>%
+  select(-Diagnostic_Group, -sex, -Age)
+
+sops_demo.phi <- left_join(scanlist_clean, demo.phi, by="BBLID")
+#skim(sops_demo.phi)
+n_unique(sops_demo.phi$observation)
+```
+
+Demographic variables have 100% completion.
+
+Using DOB to calculate age at scan and at endpoint SOPS, then removing.
+
+```{r}
+sops_demo <- sops_demo.phi %>%
+  mutate(age_scan = as.numeric(difftime(date7t,DOB, units = "weeks"))/52.25,
+         age_sops = as.numeric(difftime(DOSIPS,DOB, units = "weeks"))/52.25) %>%
+  select(-DOB)
+
+summary(sops_demo$age_scan)
+summary(sops_demo$age_sops)
+```
+
+## Diagnosis
+
+Now merge in diagnosis and filter to smallest datediff
+
+```{r}
+#get just dates/matching info for observations
+just_scans <- sops_demo %>% select(BBLID, observation, DOSIPS, date7t, scantime)
+
+sops_dx <- left_join(just_scans, redcap, by="BBLID")
+any(is.na(sops_dx$AXIS1_DX1)) #no primary dx missing
+
+#calculate datediff from dx to sops, keep just row closest
+sops_dx.filt <- sops_dx %>%
+  mutate(dx_sops_diff = as.numeric(difftime(DODIAGNOSIS,DOSIPS, units = "days"))) %>%
+  arrange(abs(dx_sops_diff)) %>%
+  group_by(observation) %>%
+  slice_head() %>% #keep only closest dx
+  ungroup() %>%
+  filter(abs(dx_sops_diff) <= 100) %>% #restrict to w/in 100 days
+  select_if(~!all(is.na(.)))
+
+sops_dx.filt %>% 
+  ggplot(aes(x=dx_sops_diff, fill=scantime)) + geom_bar() + facet_grid(cols = vars(scantime))
+
+#focusing on baseline
+sops_dx.filt %>% filter(scantime=="base.1") %>%
+  mutate(dx_to_scan_diff = as.numeric(difftime(DODIAGNOSIS,date7t, units = "days"))) %>%
+  ggplot(aes(x=dx_to_scan_diff)) + geom_dotplot()
+
+#merge back in
+n_unique(sops_dx.filt$observation)
+summary(sops_dx.filt$dx_sops_diff)
+#skim(sops_change_dx)
+```
+
+Now merge back in
+
+```{r}
+#drop stuff that's already there before merging
+sops_dx.filt <- sops_dx.filt %>%
+  select(-BBLID, -DOSIPS, -date7t, -scantime)
+
+sops_dx.final <- left_join(sops_demo, sops_dx.filt, by="observation")
+#skim(sops_dx.final)
+```
+
+First I'll make an indicator for psychosis/prodrome at baseline or endpoint (since `HSTATUS` cols aren't really great).
+
+```{r}
+sops_dx.final %>% select(contains("AXIS1_DX")) %>% 
+  t %>% c %>% unique
+control.list <- c("V71.09B")
+pro.list<- c("348.4", "348.43", "348.62", "348.42", "348.12", "348.41", "348.11")
+psych.list <- c("295.6", "298.9", "295.4", "295.9")
+other.list <- c("300", "300.23", "311", "309.21", "304.3", "296.35", "V62.82", "309.81", "300.02", "305", "296.36", "303.9", "296.32", "314", "296.25", "296.2", "296.26", "300.3", "296.9", "314.01", "799.90B")
+
+#making indicator for each dx category
+sops_dx.sum <- sops_dx.final %>% 
+  mutate(dx_control = if_any(starts_with("AXIS1_DX"), ~ .x %in% control.list,1,0),
+         dx_pro = if_any(starts_with("AXIS1_DX"), ~ .x %in% pro.list,1,0),
+         dx_psych = if_any(starts_with("AXIS1_DX"), ~ .x %in% psych.list,1,0),
+         dx_other = if_any(starts_with("AXIS1_DX"), ~ .x %in% other.list,1,0)) %>%
+  mutate(diagnosis = as.factor(case_when(dx_pro == TRUE ~ "pro", #single col of dx
+                                 dx_psych == TRUE ~ "psych",
+                                 dx_other == TRUE ~ "other",
+                                 dx_control == TRUE ~ "none")))
+
+sops_dx.sum %>% 
+  ggplot(aes(y=BBLID, x=scantime, color=diagnosis)) + geom_point()
+```
+
+Diagnosis amongst baseline prodromal and psychotic disorder subjects seem to be largely stable over time.
+
+And drop all the extra dx columns we don't need
+
+```{r}
+sops_dx.sum.filt <- sops_dx.sum %>%
+  select(!contains("AXIS1") & !contains("HSTATUS") & !contains("CONSIDER") & !contains("PRODROMAL") & !contains("POSS_PRO_DX"))
+```
+
+
+## Medication Info
+
+Load and clean med data
+
+```{r}
+#load med data
+meds <- read.csv("data/oracle_meds_all.csv", header = TRUE, stringsAsFactors = F, na = c("", "null"))
+skim(meds)
+
+#each med is it's own row, so need to rotate wide
+meds <- meds %>%
+  group_by(BBLID, DOCOLLECT) %>%
+  mutate(ID = paste(as.character(BBLID), as.character(DOCOLLECT)), #col to ID subj+timepoint
+         count = row_number(), #count meds entered
+         DOCOLLECT= as.Date(DOCOLLECT)) %>% 
+  ungroup()
+
+hist(meds$count)
+
+medswide <- meds %>%
+  select(BBLID, DOCOLLECT, ID, count, MEDICINE, NOTES, IS_CURRENT) %>%
+  mutate(BBLID=as.factor(BBLID)) %>%
+  pivot_wider(., names_from = count, values_from=c(MEDICINE, NOTES, IS_CURRENT)) # pivot
+
+#get subset
+meds_reduced <- meds %>%
+  select(BBLID, DOCOLLECT, MED_COLLECT, NOTES, MEDICINE, PHARMCLASS, DOMED_START, DOMED_END, IS_CURRENT)
+```
+
+Trying to add PNC data to see if that will help get more baseline info
+
+```{r}
+pnc.meds <- read.csv("data/n1601_health_with_meds_20170421.csv", header = TRUE, stringsAsFactors = F, na ="") %>%
+  mutate(BBLID=as.factor(bblid)) %>%
+  select(-bblid)
+skim(pnc.meds)
+
+#get managable subset of scan list
+scan_dates <- sops_dx.sum.filt %>%
+  select(BBLID, date7t, observation) %>%
+  distinct()
+
+pnc.meds_scan_date <- inner_join(scan_dates, pnc.meds, by="BBLID") %>%
+  distinct(observation, .keep_all = T)
+n_unique(pnc.meds_scan_date$BBLID)
+```
+
+Inferring based on PNC data collection window that all meds are within study range, will add into lifetime calculations. 
+
+Lets go back and look at lifetime:
+
+```{r}
+#merge with scan lists
+med_dates <- inner_join(just_scans, meds_reduced, by="BBLID")
+n_unique(med_dates$observation)
+
+med_lifetime <- med_dates %>%
+  group_by(observation) %>%
+  mutate(meds_sops_diff=as.numeric(difftime(DOCOLLECT, DOSIPS, units = "days"))) %>% #DOCOLLECT - DOSIPS, so if + then DOCOLLECT is after SOPS
+  filter((is.na(DOMED_START) & meds_sops_diff <= 100) | DOSIPS >= DOMED_START) %>% #keep if med is STARTED BEFORE SOPS (or start date unknown but collect is no later than 100 days after)
+  mutate(count = row_number()) %>% #add counts so i can pivot after
+  ungroup()
+  
+med_lifetime$MEDICINE[is.na(med_lifetime$MEDICINE)] <- "empty entry"
+skim(med_lifetime)
+
+#trying to find distinct meds for each observation
+med_lifetime_dist <- med_lifetime %>%
+  group_by(observation) %>%
+  distinct(MEDICINE, .keep_all = T) %>% #keep distinct
+  mutate(count=row_number()) %>% #update counts so i can pivot after
+  ungroup() %>%
+  select(BBLID, DOSIPS, observation, MEDICINE, NOTES, count)
+table(med_lifetime_dist$MEDICINE)
+
+#pivot
+med_lifetime_dist.wide <- pivot_wider(med_lifetime_dist, id_cols=observation, names_from = count, values_from=c(MEDICINE, NOTES)) %>% # pivot
+  select_if(~!all(is.na(.))) #drop any col that's totally empty
+n_unique(med_lifetime_dist.wide$observation)
+n_unique(med_lifetime_dist$BBLID)
+```
+
+If an individual only has `empty entry` value then we can infer that they are not taking any medications. Restricting to either date of collection no later than 100 days post-SOPS OR medicaiton being noted as starting before the SOPS date, there's med info for all subjects but not for all observations.
+
+Integrate PNC meds:
+
+```{r}
+pnc.meds.only <- pnc.meds_scan_date %>%
+  select(observation, 22:32)
+pnc.meds.only$med1[is.na(pnc.meds.only$med1)] <- "empty entry"
+
+med_lifetime_comp <- full_join(med_lifetime_dist.wide, pnc.meds.only, by="observation")
+
+#check if any observations are still missing med info:
+med_lifetime_comp %>% filter(is.na(MEDICINE_1) & is.na(med1)) %>% nrow
+```
+
+Yay, no observations are unaccounted for. Save out and manually code for psych rx:
+
+```{r}
+write.csv(med_lifetime_comp, "data/med_lifetime_comp.csv", row.names=FALSE, na="")
+```
+
+Read back in and merge coded lifetime meds:
+
+```{r}
+meds.coded <- read.csv("data/med_lifetime_comp.CODED.csv", header = TRUE, stringsAsFactors = F, na="") %>%
+  select(observation, psych.rx_life)
+
+sops_change_meds.life <- left_join(sops_dx.sum.filt, meds.coded, by="observation")
+n_unique(sops_change_meds.life$observation)
+#skim(sops_change_meds.life)
+```
+
+
+# CEST values -> FINAL DF
 
 ## Operationalizing Change
 
@@ -351,256 +590,6 @@ bs.fit <- lm(slope.sops_tot ~ PRODROMAL, data=sops_change)
 Anova(bs.fit)
 ```
 
-# Adding Covariates
-
-## Demographics
-Adding sex, DOB/age, race (csv adapted from 7T list from David).
-
-```{r}
-#load demographics (adapted from 7T list from David)
-demo.phi <- read.csv("data/7t_demographics.csv", header = TRUE, stringsAsFactors = TRUE, na = c("", "..", ".")) %>%
-  mutate(sex = as.factor(Sex_1M),
-         Ethnicity = as.factor(Ethnicity),
-         DOB = as.Date(DOB, format = "%m/%d/%y"),
-         BBLID = as.factor(BBLID)) %>%
-  select(-Diagnostic_Group, -sex, -Age)
-
-sops_change_demo.phi <- left_join(sops_change, demo.phi, by="BBLID")
-skim(sops_change_demo.phi)
-n_unique(sops_change_demo.phi$observation)
-```
-
-Demographic variables have 100% completion.
-
-Using DOB to calculate age at scan and at endpoint SOPS, then removing.
-
-```{r}
-sops_change_demo <- sops_change_demo.phi %>%
-  mutate(age_scan = as.numeric(difftime(date7t,DOB, units = "weeks"))/52.25,
-         age_end = as.numeric(difftime(DOSIPS,DOB, units = "weeks"))/52.25) %>%
-  select(-DOB)
-
-summary(sops_change_demo$age_scan)
-summary(sops_change_demo$age_end)
-```
-
-## Diagnosis
-
-Now merge in diagnosis and filter to smallest datediff
-
-```{r}
-sops_change_dx <- left_join(sops_change_demo, redcap, by="BBLID")
-any(is.na(sops_change_dx$AXIS1_DX1)) #no primary dx missing
-
-#calculate datediff from dx to scan
-sops_change_dx.base <- sops_change_dx %>%
-  mutate(dx_7t_diff = as.numeric(difftime(DODIAGNOSIS,date7t, units = "days"))) %>%
-  arrange(abs(dx_7t_diff)) %>%
-  group_by(observation) %>%
-  slice_head() %>% #keep only closest dx
-  ungroup() %>%
-  select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
-  rename_with(.cols = 40:63, function(x){paste0("base.", x)})
-
-#make sure no obs lost
-n_unique(sops_change_dx.base$observation)
-summary(sops_change_dx.base$dx_7t_diff)
-#skim(sops_change_dx)
-```
-
-linear model for fun
-
-```{r}
-bs.fit2 <- lm(slope.sops_tot ~ base.AXIS1_DX1 + age_scan, data=sops_change_dx.base)
-Anova(bs.fit2)
-```
-
-
-Ok, now i'll add in dx at endpoint (since dx ~ remission status that the papers I've found were assessing most)
-
-```{r}
-#calculate datediff from dx to scan
-sops_change_dx.end <- sops_change_dx %>%
-  mutate(dx_end_diff = as.numeric(difftime(DODIAGNOSIS,DOSIPS, units = "days"))) %>%
-  arrange(abs(dx_end_diff)) %>%
-  group_by(observation) %>%
-  slice_head() %>% #keep only closest dx
-  ungroup() %>%
-  select(observation, dx_end_diff, DODIAGNOSIS, HSTATUS, AGEONSET_CLINICRISK | contains("AXIS")) %>% #just get dx and observation stuff
-  select_if(~!all(is.na(.))) %>%
-  rename_with(.cols = 3:ncol(.), function(x){paste0("end.", x)}) #add prefix
-
-#make sure no obs lost
-n_unique(sops_change_dx.end$observation)
-summary(sops_change_dx.end$dx_end_diff)
-table(as.factor(sops_change_dx.end$dx_end_diff))
-```
-
-A few diagnoses are very far from endpoint, going to remove any outside 10 days away and merge back in
-
-```{r}
-sops_change_dx.end.filt <- sops_change_dx.end %>%
-  filter(abs(dx_end_diff) <= 10) 
-
-sops_change_dx.final <- left_join(sops_change_dx.base, sops_change_dx.end.filt, by="observation")
-#skim(sops_change_dx.final)
-```
-
-First I'll make an indicator for psychosis/prodrome at baseline or endpoint (since `HSTATUS` cols aren't really great).
-
-```{r}
-all.dx <-   sops_change_dx.final %>% select(contains("AXIS1_DX")) %>% 
-  t %>% c %>% unique
-control.list <- c("V71.09B")
-pro.list<- c("348.4", "348.43", "348.62", "348.42", "348.12", "348.41", "348.11")
-psych.list <- c("295.6", "298.9", "295.4", "295.9")
-other.list <- c("300", "300.23", "311", "309.21", "304.3", "296.35", "V62.82", "309.81", "300.02", "305", "296.36", "303.9", "296.32", "314", "296.25", "296.2", "296.26", "300.3", "296.9", "314.01", "799.90B")
-
-sops_change_dx.final <- sops_change_dx.final %>% #making indicator for each dx category
-  mutate(base.control = if_any(starts_with("base.AXIS1_DX"), ~ .x %in% control.list,1,0),
-         end.control = if_any(starts_with("end.AXIS1_DX"), ~ .x %in% control.list,1,0),
-         base.pro = if_any(starts_with("base.AXIS1_DX"), ~ .x %in% pro.list,1,0),
-         end.pro = if_any(starts_with("end.AXIS1_DX"), ~ .x %in% pro.list,1,0),
-         base.psych = if_any(starts_with("base.AXIS1_DX"), ~ .x %in% psych.list,1,0),
-         end.psych = if_any(starts_with("end.AXIS1_DX"), ~ .x %in% psych.list,1,0),
-         base.otherdx = if_any(starts_with("base.AXIS1_DX"), ~ .x %in% other.list,1,0),
-         end.otherdx = if_any(starts_with("end.AXIS1_DX"), ~ .x %in% other.list,1,0)) %>%
-  mutate(baseline.dx = as.factor(case_when(base.pro == TRUE ~ "pro", #single col of baseline dx
-                                 base.psych == TRUE ~ "psych",
-                                 base.otherdx == TRUE ~ "other",
-                                 base.control == TRUE ~ "none")),
-         end.dx = as.factor(case_when(end.pro == TRUE ~ "pro", #single col of endpoint dx
-                                 end.psych == TRUE ~ "psych",
-                                 end.otherdx == TRUE ~ "other",
-                                 end.control == TRUE ~ "none")),
-         dx_pre.post = paste(baseline.dx, end.dx, sep="-")) #indicator pre-post
-  
-table(sops_change_dx.final$dx_pre.post)
-```
-
-Diagnosis amongst baseline prodromal and psychotic disorder subjects seem to be largely stable over time.
-
-And drop all the extra dx columns we don't need
-
-```{r}
-sops_change_dx.filt <- sops_change_dx.final %>%
-  select(!contains("AXIS1") & !contains("HSTATUS") & !contains("CONSIDER") & !contains("PRODROMAL") & !contains("POSS_PRO_DX"))
-```
-
-
-## Medication Info
-
-Load and clean med data
-
-```{r}
-#load med data
-meds <- read.csv("data/oracle_meds_all.csv", header = TRUE, stringsAsFactors = F, na = c("", "null"))
-skim(meds)
-
-#each med is it's own row, so need to rotate wide
-meds <- meds %>%
-  group_by(BBLID, DOCOLLECT) %>%
-  mutate(ID = paste(as.character(BBLID), as.character(DOCOLLECT)), #col to ID subj+timepoint
-         count = row_number()) %>% #count meds entered
-  ungroup()
-
-hist(meds$count)
-
-medswide <- meds %>%
-  select(BBLID, DOCOLLECT, ID, count, MEDICINE, NOTES, IS_CURRENT) %>%
-  mutate(BBLID=as.factor(BBLID)) %>%
-  pivot_wider(., names_from = count, values_from=c(MEDICINE, NOTES, IS_CURRENT)) # pivot
-
-#get subset
-meds_reduced <- meds %>%
-  select(BBLID, DOCOLLECT, MED_COLLECT, NOTES, MEDICINE, PHARMCLASS, DOMED_START, DOMED_END, IS_CURRENT)
-```
-
-Trying to add PNC data to see if that will help get more baseline info
-
-```{r}
-pnc.meds <- read.csv("data/n1601_health_with_meds_20170421.csv", header = TRUE, stringsAsFactors = F, na ="") %>%
-  mutate(BBLID=as.factor(bblid)) %>%
-  select(-bblid)
-skim(pnc.meds)
-
-#get managable subset of scan list
-scan_dates <- sops_change_dx.filt %>%
-  select(BBLID, date7t, observation) %>%
-  distinct()
-
-pnc.meds_scan_date <- inner_join(scan_dates, pnc.meds, by="BBLID") %>%
-  distinct(observation, .keep_all = T)
-n_unique(pnc.meds_scan_date$BBLID)
-```
-
-Inferring based on PNC data collection window that all meds are within study range, will add into lifetime calculations. 
-
-Lets go back and look at lifetime:
-
-```{r}
-#get managable subset of endpoint list
-end_dates <- sops_change_dx.filt %>%
-  select(BBLID, DOSIPS, observation) %>%
-  distinct()
-#merge
-end_date_med <- inner_join(end_dates, meds_reduced, by="BBLID")
-
-#ok, keep only rows where med is current to 7T
-med_lifetime <- end_date_med %>%
-  filter(is.na(DOMED_START) | DOSIPS > DOMED_START) %>% #keep if med is STARTED BEFORE SOPS end
-  group_by(observation) %>%
-  mutate(count = row_number()) %>% #add counts so i can pivot after
-  ungroup()
-med_lifetime$MEDICINE[is.na(med_lifetime$MEDICINE)] <- "empty entry"
-skim(med_lifetime)
-
-#trying to find distinct meds for each observation
-med_lifetime_dist <- med_lifetime %>%
-  group_by(observation) %>%
-  distinct(MEDICINE, .keep_all = T) %>% #keep distinct
-  mutate(count=row_number()) %>% #update counts so i can pivot after
-  ungroup() %>%
-  select(BBLID, DOSIPS, observation, MEDICINE, NOTES, count)
-table(med_lifetime_dist$MEDICINE)
-
-#pivot
-med_lifetime_dist.wide <- pivot_wider(med_lifetime_dist, id_cols=observation, names_from = count, values_from=c(MEDICINE, NOTES)) %>% # pivot
-  select_if(~!all(is.na(.))) #drop any col that's totally empty
-n_unique(med_lifetime_dist.wide$observation)
-sum(is.na(med_lifetime_dist.wide$MEDICINE_1))
-```
-
-Because there's med info for all subjects, if an individual only has `empty entry` value then we can infer that they are not taking any medications.
-
-Integrate PNC meds:
-
-```{r}
-pnc.meds.only <- pnc.meds_scan_date %>%
-  select(observation, 22:32)
-
-med_lifetime_comp <- full_join(med_lifetime_dist.wide, pnc.meds.only, by="observation")
-```
-
-Save out and manually code for psych rx:
-
-```{r}
-write.csv(med_lifetime_comp, "data/med_lifetime_comp.csv", row.names=FALSE, na="")
-```
-
-Read back in and merge coded lifetime meds:
-
-```{r}
-meds.coded <- read.csv("data/med_lifetime_comp.CODED.csv", header = TRUE, stringsAsFactors = F, na="") %>%
-  select(observation, psych.rx_life)
-
-sops_change_meds.life <- left_join(sops_change_dx.filt, meds.coded, by="observation")
-n_unique(sops_change_meds.life$observation)
-#skim(sops_change_meds.life)
-```
-
-
-# CEST values -> FINAL DF
 
 # EDA
 
