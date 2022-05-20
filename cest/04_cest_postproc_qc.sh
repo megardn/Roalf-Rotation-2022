@@ -8,7 +8,7 @@
 #paths
 cest=/project/bbl_roalf_cest_predict/data/outputs
 logdir=/project/bbl_roalf_cest_predict/logs
-cest_logfile=$logdir/cest_postproc_qc.log
+cest_logfile=$logdir/Quality_Control/cest_postproc_qc.log
 {
 for i in $(ls $cest) # script will only be executed for participants in this directory
     do
@@ -54,7 +54,7 @@ for i in $(ls $cest) # script will only be executed for participants in this dir
 
         
         # creating gluCEST png (with slicer from FSL)
-        slicer $cest/$case/*GluCEST.nii.gz -i 0 16 -a $logdir/Quality_Control/QC_Postprocessing/$case-GluCEST-qc.png
+        slicer $cest/$case/*GluCEST.nii.gz -i 0 16 -a $logdir/Quality_Control/QC_Postprocessing_pngs/$case-GluCEST-qc.png
             
         # creating Harvard-Oxford pngs (with overlay from FSL)
         overlay 1 0 $cest/$case/*GluCEST.nii.gz -a $cest/$case/atlases/*2d-HarvardOxford-sub.nii.gz 1 20 $logdir/Quality_Control/QC_Postprocessing_pngs/$case-HO-sub-overlay.nii.gz
