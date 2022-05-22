@@ -8,11 +8,9 @@ output: html_document
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools)
 ```
 
-**NOTES TO SELF**
-We want the final df to be long, not wide
 
 
 # Compile Scan Lists
@@ -35,12 +33,14 @@ summary(glu_old)
 glu_old <- glu_old %>%
   mutate(BBLID=as.character(BBLID),
   X7T_date = gsub(",.*","", X7T_date), 
-  X7T_date = as.Date(X7T_date,format ="%m/%d/%y"),
-  ONM_7T_date = as.Date(ONM_7T_date,format ="%m/%d/%y")) %>%
-  rename(Terra=X7T_date,
-         ONM=ONM_7T_date)
+  Terra.7T_date = as.Date(X7T_date,format ="%m/%d/%y"),
+  ONM.7T_date = as.Date(ONM_7T_date,format ="%m/%d/%y"),
+  ONM.SCANID=as.character(ONM_SCANID)) %>%
+  rename(Terra.SCANID=Terra_SCANID) %>%
+  select(-X7T_date, -ONM_7T_date, -ONM_SCANID)
+
 # make long
-glu_old.long <- gather(glu_old, scanner, "7T_date", Terra:ONM, factor_key=TRUE) %>%
+glu_old.long <- glu_old %>% pivot_longer(2:5, names_sep = '[.]', names_to=c("scanner", ".value")) %>%
   drop_na("7T_date")
 ```
 
@@ -74,6 +74,7 @@ glu_age <- glu_age %>%
          "7T_date" = as.Date(DOSCAN,format ="%m/%d/%y"),
          scanner = as.factor("Terra"),
          SCANID=as.character(SCANID))
+summary(glu_age)
 ```
 
 Join all lists:
@@ -538,7 +539,123 @@ n_unique(sops_change_meds.life$observation)
 ```
 
 
-# CEST values -> FINAL DF
+# CEST values
+
+Read in processed CEST values from Harvard Oxford Subcortical Atlas ROIs:
+
+```{r}
+cest.rois <- read.csv("/Users/megardn/ImageData/PMACS_remote/data/cest_values/GluCEST-HarvardOxford-Subcortical-Measures.csv", header = TRUE, stringsAsFactors = F, sep = '\t', na="NaN")
+skim(cest.rois)
+
+#clean up a bit
+cest.vals <- cest.rois %>%
+  select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
+  mutate(scan = str_split(as.character(Subject), "/", simplify = T)[, 6]) %>% #get BBLID_scanID 
+  select(-Subject)
+
+#GM voxels
+cest.gm.rois <- read.csv("/Users/megardn/ImageData/PMACS_remote/data/cest_values/GMDensity-HarvardOxford-Subcortical-Measures.csv", header = TRUE, stringsAsFactors = F, sep = '\t', na="NaN")
+
+#clean up a bit
+gm.vals <- cest.gm.rois %>%
+  select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
+  mutate(scan = str_split(as.character(Subject), "/", simplify = T)[, 6]) %>% #get BBLID_scanID 
+  select(-Subject) %>%
+  rename_with(.cols = 1:(ncol(.)-1), function(x){paste0("gm.", x)}) #add prefix
+```
+
+ALL SCANS HAVE RIGHT THALAMUS DATA!
+
+*NOTE: 1 SUBJECT HAS 2 SCANS, FILTER DOWN TO SCAN WITH BETTER QC OR MORE SOPS FOLLOWUPS*
+
+one subject also weirdly has GM values in `L_CerebralWM_mean`, outputting scan ID so I can look at the niftis
+
+```{r}
+gm.vals %>% filter(!is.na(L_CerebralWM_numvoxels)) %>% select(scan, L_CerebralWM_numvoxels)
+```
+
+Looks like slab was placed across the midline, seeing if other scans have comparable gm voxels in `R_CerebralWM_mean` as comparison.
+
+```{r}
+gm.vals %>% filter(!is.na(R_CerebralWM_numvoxels)) %>% select(scan, R_CerebralWM_numvoxels)
+```
+
+Seems like having errant GM voxels (calculated probablistically via FAST) isn't uncommon in WM (as defined by HO Subcortical atlas), what makes 94276_10927 unique is slab orientation. **Will double check with David once final data is reprocessed.**
+
+#Long Data
+
+Plotting correlations 
+
+```{r fig.width=15, fig.height=15}
+skim(sops_change_meds.life)
+
+sops_change_meds.life %>% 
+  select_if(is.numeric) %>%
+  cor(., use = "pairwise.complete.obs") %>%
+  corrplot(method = "color", 
+           type = "upper",
+           addCoef.col = "black", # Add coefficient of correlation
+           tl.col="black", tl.srt = 45, #Text label color and rotation
+           # hide correlation coefficient on the principal diagonal
+           diag = FALSE 
+           )
+```
+
+```{r}
+ggplot(data = sops_change_meds.life, mapping = aes(x = sips_diff_days, y = sops_tot)) +
+  geom_point(na.rm = T, aes(col = BBLID)) +
+  geom_smooth(method = "lm", na.rm = T, col = "black", se = F) +
+  theme(legend.position = "right")
+```
+
+```{r}
+lmer.1 <- lmer(sops_tot ~ sips_diff_days + (1|BBLID), REML = T, data = sops_change_meds.life)
+
+model_coefs <- coef(lmer.1)$BBLID %>% 
+  rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+  rownames_to_column("BBLID")
+
+model1.data <- left_join(sops_change_meds.life, model_coefs, by="BBLID")
+
+ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_tot)) +
+  geom_point(na.rm = T, aes(col = BBLID)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = BBLID
+                  ),
+              size = 0.5
+              ) +
+  theme(legend.position = "right")
+```
+
+
+```{r}
+scaled.sops_change_meds.life <- sops_change_meds.life %>% mutate_if(is.numeric, scale)
+
+lmer.2 <- lmer(sops_tot ~  (1 + sips_diff_days|BBLID), REML = F, data = scaled.sops_change_meds.life )
+
+model_coefs2 <- coef(lmer.2)$BBLID %>% 
+  rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+  rownames_to_column("BBLID")
+
+ relgrad <- with(lmer.2@optinfo$derivs,solve(Hessian,gradient))
+ max(abs(relgrad))
+
+model2.data <- left_join(scaled.sops_change_meds.life, model_coefs2, by="BBLID")
+
+ggplot(data = model2.data, mapping = aes(x = sips_diff_days, y = sops_tot)) +
+  geom_point(na.rm = T, aes(col = BBLID)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = BBLID
+                  ),
+              size = 0.5
+              ) +
+  theme(legend.position = "right") +
+  ggtitle("Model on Scaled Numeric Data")
+```
+
+#Wide Data
 
 ## Operationalizing Change
 
