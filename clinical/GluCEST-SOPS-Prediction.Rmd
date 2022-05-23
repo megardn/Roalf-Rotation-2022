@@ -81,11 +81,11 @@ Join all lists:
 
 ```{r}
 #join long versions of old and Longitudinal scan lists
-long1 <- merge(x=glu_old.long, y=glu_ar.long,by=c("BBLID", "7T_date", "scanner"),all=TRUE)
+long1 <- merge(x=glu_old.long, y=glu_ar.long, by=c("BBLID", "7T_date", "scanner"),all=TRUE)
 str(long1)
 
 #join in Age study scan list
-all_7t.long <- merge(x=long1, y=glu_age, by=c("BBLID", "7T_date", "scanner"), all=TRUE)
+all_7t.long <- merge(x=long1, y=glu_age, by=c("BBLID", "7T_date", "scanner", "SCANID"), all=TRUE)
 all_7t.long <- all_7t.long %>% rename(date_7t = "7T_date")
 str(all_7t.long)
 
@@ -157,7 +157,7 @@ glist <- c("G1", "G2", "G3", "G4")
 sops.item.list <- c(plist, nlist, dlist, glist)
 
 #drop missing sops items
-sips_filt <- sips %>% drop_na(c(sops.item.list))
+sips_filt <- sips %>% drop_na(c(plist))
 #sum(is.na(sips_filt[,c(sops.item.list)]))
 length(unique(sips_filt$BBLID))
 ```
@@ -300,12 +300,15 @@ scanlist_clean <- scanlist %>%
   mutate(scantime=paste(scantime,as.character(row), sep=".")) %>% #number endpoints if subj has more than one
   select(-row)%>%
   ungroup() %>%
-  mutate(observation = paste(bblid_scan, scantime))
+  mutate(observation = paste(bblid_scan, scantime),
+         scanid=gsub(" ", "",paste(BBLID,"_",scanid)))
 
 table(scanlist_clean$scantime)
 
 scanlist_clean %>% filter(scantime=="base.1") %>%
   ggplot(aes(x=sips_diff_days)) + geom_dotplot()
+
+skim(scanlist_clean)
 ```
 
 *Keeping data long for now for mixed random effects model!*
@@ -387,6 +390,7 @@ sops_dx.filt <- sops_dx.filt %>%
 
 sops_dx.final <- left_join(sops_demo, sops_dx.filt, by="observation")
 #skim(sops_dx.final)
+n_unique(sops_dx.final$observation)
 ```
 
 First I'll make an indicator for psychosis/prodrome at baseline or endpoint (since `HSTATUS` cols aren't really great).
@@ -550,7 +554,7 @@ skim(cest.rois)
 #clean up a bit
 cest.vals <- cest.rois %>%
   select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
-  mutate(scan = str_split(as.character(Subject), "/", simplify = T)[, 6]) %>% #get BBLID_scanID 
+  mutate(scanid = str_split(as.character(Subject), "/", simplify = T)[, 6]) %>% #get BBLID_scanID 
   select(-Subject)
 
 #GM voxels
@@ -559,7 +563,7 @@ cest.gm.rois <- read.csv("/Users/megardn/ImageData/PMACS_remote/data/cest_values
 #clean up a bit
 gm.vals <- cest.gm.rois %>%
   select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
-  mutate(scan = str_split(as.character(Subject), "/", simplify = T)[, 6]) %>% #get BBLID_scanID 
+  mutate(scanid = str_split(as.character(Subject), "/", simplify = T)[, 6]) %>% #get BBLID_scanID 
   select(-Subject) %>%
   rename_with(.cols = 1:(ncol(.)-1), function(x){paste0("gm.", x)}) #add prefix
 ```
@@ -571,16 +575,33 @@ ALL SCANS HAVE RIGHT THALAMUS DATA!
 one subject also weirdly has GM values in `L_CerebralWM_mean`, outputting scan ID so I can look at the niftis
 
 ```{r}
-gm.vals %>% filter(!is.na(L_CerebralWM_numvoxels)) %>% select(scan, L_CerebralWM_numvoxels)
+gm.vals %>% filter(!is.na(gm.L_CerebralWM_numvoxels)) %>% select(scanid, gm.L_CerebralWM_numvoxels)
 ```
 
 Looks like slab was placed across the midline, seeing if other scans have comparable gm voxels in `R_CerebralWM_mean` as comparison.
 
 ```{r}
-gm.vals %>% filter(!is.na(R_CerebralWM_numvoxels)) %>% select(scan, R_CerebralWM_numvoxels)
+gm.vals %>% filter(!is.na(gm.R_CerebralWM_numvoxels)) %>% select(scanid, gm.R_CerebralWM_numvoxels)
 ```
 
 Seems like having errant GM voxels (calculated probablistically via FAST) isn't uncommon in WM (as defined by HO Subcortical atlas), what makes 94276_10927 unique is slab orientation. **Will double check with David once final data is reprocessed.**
+
+Merging cest values and filter to thalamic ROI
+
+```{r}
+all.cest <- merge(cest.vals, gm.vals, by="scanid")
+
+r.thal.dat <- all.cest %>% select("scanid" | contains("R_Thalamus"))
+skim(r.thal.dat)
+```
+
+Merging into other *FINAL DATASET*
+
+```{r}
+final.df <- full_join(sops_change_meds.life, r.thal.dat, by="scanid")
+n_unique(final.df$observation)
+n_unique(final.df$BBLID)
+```
 
 #Long Data
 
