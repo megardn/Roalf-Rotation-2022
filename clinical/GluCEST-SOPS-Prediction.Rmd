@@ -230,7 +230,7 @@ table(as.factor(sips_scan_long.lab$scan.time))
 n_unique(sips_scan_long.lab$BBLID)
 
 #drop scans with less than 2 timepoints
-sips.scan.long.filt <- sips_scan_long.lab %>%
+scanlist_clean <- sips_scan_long.lab %>%
   group_by(BBLID, date7t) %>%
   arrange(abs(sips_diff_days)) %>%
   filter(first(scan.time)=="base" & n() >= 2) %>% #only keep BBLID-scan pairs with 2+ timepoints, the first being baseline
@@ -242,134 +242,10 @@ sips.scan.long.filt <- sips_scan_long.lab %>%
   ungroup() %>%
   select(-row)
 
-table(as.factor(sips.scan.long.filt$scan.time))
-n_unique(sips.scan.long.filt$BBLID)
-```
-
-```{r}
-sips.and.scans <- inner_join(all_7t.wide, sips_scored, by = "BBLID")
-length(unique(sips.and.scans$BBLID))
-
-#calc diff from each 7T scan (negative values -> dx before 7t)
-sips.and.scans <- sips.and.scans %>%
-  mutate(sips_diff_days1 = as.numeric(difftime(DOSIPS,scan_date_7t_1, units = "days")),
-         sips_diff_days2 = as.numeric(difftime(DOSIPS,scan_date_7t_2, units = "days")),
-         sips_diff_days3 = as.numeric(difftime(DOSIPS,scan_date_7t_3, units = "days")))
-
-length(unique(sips.and.scans$BBLID)) #no subj lost
-
-#label SIPS that are baseline or post for each scan
-sip.pre.scan1 <-  which(sips.and.scans$sips_diff_days1 <= 364 & sips.and.scans$sips_diff_days1 >= -365)
-sip.pre.scan2 <-  which(sips.and.scans$sips_diff_days2 <= 364 & sips.and.scans$sips_diff_days2 >= -365)
-sip.pre.scan3 <-  which(sips.and.scans$sips_diff_days3 <= 364 & sips.and.scans$sips_diff_days3 >= -365)
-sip.post.scan1 <-  which(sips.and.scans$sips_diff_days1 > 364)
-sip.post.scan2 <-  which(sips.and.scans$sips_diff_days2 > 364)
-sip.post.scan3 <-  which(sips.and.scans$sips_diff_days3 > 364)
-
-#get BBLIDs to go with the timepoints
-scan1_b <- as.integer(sips.and.scans$BBLID[sip.pre.scan1])
-scan2_b <- as.integer(sips.and.scans$BBLID[sip.pre.scan2])
-scan3_b <- as.integer(sips.and.scans$BBLID[sip.pre.scan3])
-scan1_f <- as.integer(sips.and.scans$BBLID[sip.post.scan1])
-scan2_f <- as.integer(sips.and.scans$BBLID[sip.post.scan2])
-scan3_f <- as.integer(sips.and.scans$BBLID[sip.post.scan3])
-
-#label SIPS relative to each scan
-sips.and.scans.labeled <- sips.and.scans %>%
-  mutate(scan1.time = case_when(row_number() %in% sip.pre.scan1 ~ "base", 
-                                row_number() %in% sip.post.scan1 ~ "end"),
-         scan2.time = case_when(row_number() %in% sip.pre.scan2 ~ "base", 
-                                row_number() %in% sip.post.scan2 ~ "end"),
-         scan3.time = case_when(row_number() %in% sip.pre.scan3 ~ "base", 
-                                row_number() %in% sip.post.scan3 ~ "end"),
-         bblid_scan = paste(as.character(BBLID), as.character(scan_date_7t_1))) %>% #making unique ID - temporary until i pull scan ids
-  filter_at(vars(scan1.time, scan2.time, scan3.time), any_vars(!is.na(.)))
-
-#label which scan should be used by BBLID
-sips.and.scans.labeled$use_scan1 <- (as.integer(sips.and.scans.labeled$BBLID) %in% scan1_b & as.integer(sips.and.scans.labeled$BBLID) %in% scan1_f)
-sips.and.scans.labeled$use_scan2 <- (as.integer(sips.and.scans.labeled$BBLID) %in% scan2_b & as.integer(sips.and.scans.labeled$BBLID) %in% scan2_f)
-sips.and.scans.labeled$use_scan3 <- (as.integer(sips.and.scans.labeled$BBLID) %in% scan3_b & as.integer(sips.and.scans.labeled$BBLID) %in% scan3_f)
-
-#only keep clinical values that match a scan
-sips.sops.lab_filt <- sips.and.scans.labeled %>%
-  filter((use_scan1==TRUE & (!is.na(scan1.time)))|
-         (use_scan2==TRUE & (!is.na(scan2.time)))| 
-         (use_scan3==TRUE & (!is.na(scan3.time))))
-n_unique(sips.sops.lab_filt$BBLID)
-
-#see which scans timepoints are actually IDd for use across any subj
-any(unique(sips.sops.lab_filt$use_scan1))
-any(unique(sips.sops.lab_filt$use_scan2))
-any(unique(sips.sops.lab_filt$use_scan3))
-```
-
-Ok, now we know which scan to use by BBLID (based on SIPS dates) and have labeled if each SIPS assessment is a baseline or endpoint for which scans.
-
-```{r}
-#pivot longer
-scanlist_messy <- sips.sops.lab_filt %>% 
-  select(BBLID,scan_date_7t_1,scan_scanner_1,scan_SCANID_1,use_scan1, scan_date_7t_2,scan_scanner_2,scan_SCANID_2,use_scan2, 11:48, 50, 51, 53) %>%
-  distinct() %>%
-  rename(date7t__1=scan_date_7t_1,
-         date7t__2=scan_date_7t_2,
-         scanner__1=scan_scanner_1,
-         scanner__2=scan_scanner_2,
-         scanid__1=scan_SCANID_1,
-         scanid__2=scan_SCANID_2,
-         use.scan__1=use_scan1,
-         use.scan__2=use_scan2,
-         sips_diff_days__1=sips_diff_days1,
-         sips_diff_days__2=sips_diff_days2,
-         scantime__1=scan1.time,
-         scantime__2=scan2.time) %>%
-    pivot_longer(!BBLID, names_to = c(".value", "scan"), names_sep = "__", values_drop_na = TRUE)
-
-#the pivot isn't perfect (puts actual SIPS values in their own row) so we'll fill up values into correct slots then drop unnecessary rows
-scanlist <- scanlist_messy %>%
-  group_by(BBLID) %>%
-  fill(7:42, .direction = "up") %>%
-  ungroup() %>%
-  subset(use.scan==TRUE) %>%
-  mutate(bblid_scan = paste(as.character(BBLID), as.character(scan)))
-
-#if ppt has multiple baseline scans, just select the one closest to scan date
-scanlist_clean <- scanlist %>%
-  group_by(bblid_scan, scantime) %>%
-  arrange(abs(sips_diff_days)) %>%
-  mutate(row = row_number()) %>%
-  filter(!(scantime=="base" & row > 1)) %>% 
-  drop_na(scantime) %>%
-  mutate(scantime=paste(scantime,as.character(row), sep=".")) %>% #number endpoints if subj has more than one
-  select(-row)%>%
-  ungroup() %>%
-  mutate(observation = paste(bblid_scan, scantime),
-         scanid=gsub(" ", "",paste(BBLID,"_",scanid)))
-
-table(scanlist_clean$scantime)
-
-scanlist_clean %>% filter(scantime=="base.1") %>%
-  ggplot(aes(x=sips_diff_days)) + geom_dotplot()
-
+table(as.factor(scanlist_clean$scan.time))
+n_unique(scanlist_clean$BBLID)
 skim(scanlist_clean)
 ```
-
-
-Comparing to wide outputs 
-```{r}
-scanlist_clean.test <- scanlist_clean %>%
-  rename(SCANID=scanid,
-         scan.time=scantime) %>%
-  mutate(observation=paste(BBLID, as.character(date7t), scan.time)) %>%
-  select(-scan, -use.scan, -bblid_scan)
-
-setdiff(scanlist_clean.test, sips.scan.long.filt)
-
-render_diff(
-    diff_data(data_ref = scanlist_clean.test,
-              data = sips.scan.long.filt)
-)
-```
-
 
 *Keeping data long for now for mixed random effects model!*
 
@@ -412,7 +288,7 @@ Now merge in diagnosis and filter to smallest datediff
 
 ```{r}
 #get just dates/matching info for observations
-just_scans <- sops_demo %>% select(BBLID, observation, DOSIPS, date7t, scantime)
+just_scans <- sops_demo %>% select(BBLID, observation, DOSIPS, date7t, scan.time)
 
 sops_dx <- left_join(just_scans, redcap, by="BBLID")
 any(is.na(sops_dx$AXIS1_DX1)) #no primary dx missing
@@ -428,10 +304,10 @@ sops_dx.filt <- sops_dx %>%
   select_if(~!all(is.na(.)))
 
 sops_dx.filt %>% 
-  ggplot(aes(x=dx_sops_diff, fill=scantime)) + geom_bar() + facet_grid(cols = vars(scantime))
+  ggplot(aes(x=dx_sops_diff, fill=scan.time)) + geom_bar() + facet_grid(cols = vars(scan.time))
 
 #focusing on baseline
-sops_dx.filt %>% filter(scantime=="base.1") %>%
+sops_dx.filt %>% filter(scan.time=="base.1") %>%
   mutate(dx_to_scan_diff = as.numeric(difftime(DODIAGNOSIS,date7t, units = "days"))) %>%
   ggplot(aes(x=dx_to_scan_diff)) + geom_dotplot()
 
@@ -446,7 +322,7 @@ Now merge back in
 ```{r}
 #drop stuff that's already there before merging
 sops_dx.filt <- sops_dx.filt %>%
-  select(-BBLID, -DOSIPS, -date7t, -scantime)
+  select(-BBLID, -DOSIPS, -date7t, -scan.time)
 
 sops_dx.final <- left_join(sops_demo, sops_dx.filt, by="observation")
 #skim(sops_dx.final)
@@ -475,7 +351,7 @@ sops_dx.sum <- sops_dx.final %>%
                                  dx_control == TRUE ~ "none")))
 
 sops_dx.sum %>% 
-  ggplot(aes(y=BBLID, x=scantime, color=diagnosis)) + geom_point()
+  ggplot(aes(y=BBLID, x=scan.time, color=diagnosis)) + geom_point()
 ```
 
 Diagnosis amongst baseline prodromal and psychotic disorder subjects seem to be largely stable over time.
@@ -658,7 +534,10 @@ skim(r.thal.dat)
 Merging into other *FINAL DATASET*
 
 ```{r}
-final.df <- full_join(sops_change_meds.life, r.thal.dat, by="scanid")
+clin.to.merge <- sops_change_meds.life %>%
+  mutate(scanid=paste(BBLID, SCANID, sep="_"))
+
+final.df <- right_join(clin.to.merge, r.thal.dat, by="scanid")
 n_unique(final.df$observation)
 n_unique(final.df$BBLID)
 ```
@@ -746,7 +625,7 @@ Ok, now we calculate change from baseline to each endpoint (absolute and slope).
 #calculate change
 sops_change <- scanlist_clean %>% 
   group_by(bblid_scan) %>%
-  arrange(scantime) %>%
+  arrange(scan.time) %>%
   mutate(abs.delta.sops_p = sops_p - first(sops_p), #change=final-baseline -> negative value means score improves!
          abs.delta.sops_n = sops_n - first(sops_n),
          abs.delta.sops_d = sops_d - first(sops_d),
@@ -760,10 +639,10 @@ sops_change <- scanlist_clean %>%
          slope.sops_g = abs.delta.sops_g/delta.sops_time,
          slope.sops_tot = abs.delta.sops_tot/delta.sops_time,
          slope.gafc = abs.delta.gafc/delta.sops_time,
-         observation = paste(bblid_scan, scantime)) %>% #add unique ID for each BBLID-scan-endpoint#
+         observation = paste(bblid_scan, scan.time)) %>% #add unique ID for each BBLID-scan-endpoint#
   ungroup() %>%
   select(!c(sops.item.list, sops_p, sops_n, sops_d, sops_g, sops_tot)) %>% #drop raw scores
-  filter(!(scantime=="base.1"))
+  filter(!(scan.time=="base.1"))
 
 #double check to make sure no endpoint scans come before baseline scans 
 summary(sops_change$delta.sops_time)
@@ -880,7 +759,7 @@ Removed because it resulted in irritating and uninterpretable inf values.
 ```{r, eval=FALSE}
 sops_change <- sops_change %>% 
   group_by(bblid_scan) %>%
-  arrange(scantime) %>%
+  arrange(scan.time) %>%
   mutate(pct.delta.sops_p = abs.delta.sops_p/first(sops_p)  * 100,
          pct.delta.sops_n = abs.delta.sops_n/first(sops_n)  * 100,
          pct.delta.sops_d = abs.delta.sops_d/first(sops_d)  * 100,
