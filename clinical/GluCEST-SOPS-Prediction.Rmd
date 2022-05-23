@@ -8,7 +8,7 @@ output: html_document
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff)
 ```
 
 
@@ -53,9 +53,9 @@ summary(glu_ar)
 #clean up formatting
 glu_ar <- glu_ar %>%
   mutate(BBLID=as.character(BBLID),
-         baseline_clinical = as.Date(baseline_clinical, format ="%m/%d/%y"),
          base_7t = as.Date(base_7t,format ="%m/%d/%y"),
-         follow_7t = as.Date(follow_7t,format ="%m/%d/%y"))
+         follow_7t = as.Date(follow_7t,format ="%m/%d/%y")) %>%
+  select(-baseline_clinical)
 
 # make long
 glu_ar.long <- gather(glu_ar, scanner, "7T_date", base_7t:follow_7t, factor_key=TRUE) %>%
@@ -201,8 +201,50 @@ sips_scored <- sips_scored %>% select(-VISITNUM, -RATER, -REVIEW, -POS_345, -POS
 head(sips_scored)
 ```
 
+Merging into long scanlist and filtering for scans with baseline w/in 1 yr and at least one follow-up 1yr or more later
 
-Now merge SOPS in with scans
+```{r}
+sips_scan_long <- inner_join(all_7t.long, sips_scored, by="BBLID")
+head(sips_scan_long)
+
+#calc diff from each 7T scan (negative values -> dx before 7t)
+sips_scan_long <- sips_scan_long %>%
+  mutate(sips_diff_days = as.numeric(difftime(DOSIPS,date_7t, units = "days"))) %>%
+  rename(date7t=date_7t)
+         
+sip.pre.scan_l <-  which(sips_scan_long$sips_diff_days <= 364 & sips_scan_long$sips_diff_days >= -365)
+sip.post.scan_l <-  which(sips_scan_long$sips_diff_days > 364)
+
+sips_scan_long.lab <- sips_scan_long %>%
+  mutate(scan.time = case_when(row_number() %in% sip.pre.scan_l ~ "base", 
+                                row_number() %in% sip.post.scan_l ~ "end"),) %>% #label every sops timepoint relative to each scan
+  filter(!is.na(scan.time)) %>% #drop sops that don't meet criteria for base or endpoint 
+  group_by(BBLID, date7t) %>%
+  arrange(abs(sips_diff_days)) %>%
+  mutate(row = row_number()) %>%
+  filter(!(scan.time=="base" & row > 1)) %>% #if subject has more than one baseline SOPS, just get closest to scan
+  ungroup() %>%
+  select(-row)
+
+table(as.factor(sips_scan_long.lab$scan.time))
+n_unique(sips_scan_long.lab$BBLID)
+
+#drop scans with less than 2 timepoints
+sips.scan.long.filt <- sips_scan_long.lab %>%
+  group_by(BBLID, date7t) %>%
+  arrange(abs(sips_diff_days)) %>%
+  filter(first(scan.time)=="base" & n() >= 2) %>% #only keep BBLID-scan pairs with 2+ timepoints, the first being baseline
+  ungroup() %>%
+  group_by(BBLID, date7t, scan.time) %>%
+  mutate(row = row_number(),
+         scan.time=paste(scan.time,as.character(row), sep="."), #number endpoints if subj has more than one
+         observation = paste(as.character(BBLID), as.character(date7t), scan.time)) %>% #add indicator for observation
+  ungroup() %>%
+  select(-row)
+
+table(as.factor(sips.scan.long.filt$scan.time))
+n_unique(sips.scan.long.filt$BBLID)
+```
 
 ```{r}
 sips.and.scans <- inner_join(all_7t.wide, sips_scored, by = "BBLID")
@@ -310,6 +352,24 @@ scanlist_clean %>% filter(scantime=="base.1") %>%
 
 skim(scanlist_clean)
 ```
+
+
+Comparing to wide outputs 
+```{r}
+scanlist_clean.test <- scanlist_clean %>%
+  rename(SCANID=scanid,
+         scan.time=scantime) %>%
+  mutate(observation=paste(BBLID, as.character(date7t), scan.time)) %>%
+  select(-scan, -use.scan, -bblid_scan)
+
+setdiff(scanlist_clean.test, sips.scan.long.filt)
+
+render_diff(
+    diff_data(data_ref = scanlist_clean.test,
+              data = sips.scan.long.filt)
+)
+```
+
 
 *Keeping data long for now for mixed random effects model!*
 
