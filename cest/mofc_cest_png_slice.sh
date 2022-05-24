@@ -61,3 +61,8 @@ for cest in $cest_pathlist
     " >> $logdir/mofc/QC_GUI_CEST.html
                 
     done
+
+#for seq in B0map B1map B0B1CESTmap
+#do
+#/project/bbl_projects/apps/melliott/scripts/dicom2nifti.sh -u -r Y -F /project/bbl_roalf_cest_predict/data/sandbox 105176_9332-B0B1CESTmap2.nii /project/bbl_roalf_cest_predict/data/sandbox/CESTMAP994/*dcm
+#done
