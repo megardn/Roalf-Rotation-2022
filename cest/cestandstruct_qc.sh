@@ -9,7 +9,7 @@
 
 # cest directory
 cest=/project/bbl_roalf_cest_predict/data/data.pull
-logdir=/project/bbl_roalf_cest_predict/logs
+logdir=/project/bbl_roalf_cest_predict/logs/
 
 cest_logfile=$logdir/cest_gui_qc.log # if want to keep track of stuff in log file
 {
@@ -38,9 +38,9 @@ cest_logfile=$logdir/cest_gui_qc.log # if want to keep track of stuff in log fil
             mkdir $logdir/Quality_Control/QC_Preprocessing_pngs
             fi
 
-            if ! [ -e $logdir/Quality_Control/QC_GUI_CEST.html ]
+            if ! [ -e $logdir/Quality_Control/QC_Preprocessing_pngs/QC_GUI_CEST.html ]
             then
-            touch $logdir/Quality_Control/QC_GUI_CEST.html
+            touch $logdir/Quality_Control/QC_Preprocessing_pngs/QC_GUI_CEST.html
             echo "<html>
 
             <head>
@@ -54,7 +54,7 @@ cest_logfile=$logdir/cest_gui_qc.log # if want to keep track of stuff in log fil
             <br><strong><font size="5" color="1814A1">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;B0 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; B1 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp;B0B1-corrected CEST</font></strong><br>
             <br>
 
-            " >> $logdir/Quality_Control/QC_GUI_CEST.html
+            " >> $logdir/Quality_Control/QC_Preprocessing_pngs/QC_GUI_CEST.html
             fi
 
             slicer $cest/$participant/$session/cest/cest_gui_niftis/*B0map.nii -i -1.3 1.3 -a $logdir/Quality_Control/QC_Preprocessing_pngs/$participant-$session-B0MAP-qc.png
@@ -68,7 +68,7 @@ cest_logfile=$logdir/cest_gui_qc.log # if want to keep track of stuff in log fil
             <img src=$participant-$session-CEST-qc.png height="350" width="350">
             <br> 
 
-            " >> $logdir/Quality_Control/QC_GUI_CEST.html
+            " >> $logdir/Quality_Control/QC_Preprocessing_pngs/QC_GUI_CEST.html
                 
             
             else
@@ -106,9 +106,9 @@ struc_logfile=$logdir/struc_data.pull_qc.log # if want to keep track of stuff in
             mkdir $logdir/Quality_Control
             fi
 
-            if ! [ -e $logdir/Quality_Control/QC_STRUCT_DATA.PULL.html ]
+            if ! [ -e $logdir/Quality_Control/QC_Preprocessing_pngs/QC_STRUCT_DATA.PULL.html ]
             then
-            touch $logdir/Quality_Control/QC_STRUCT_DATA.PULL.html
+            touch $logdir/Quality_Control/QC_Preprocessing_pngs/QC_STRUCT_DATA.PULL.html
             echo "<html>
 
             <head>
@@ -120,7 +120,7 @@ struc_logfile=$logdir/struc_data.pull_qc.log # if want to keep track of stuff in
             <br><strong><font size="7.5" color="1814A1"> CEST DATA QUALITY CONTROL</font></strong><br>
             <br>
 
-            " >> $logdir/Quality_Control/QC_STRUCT_DATA.PULL.html
+            " >> $logdir/Quality_Control/QC_Preprocessing_pngs/QC_STRUCT_DATA.PULL.html
             fi
 
             if [ -f $cest/$participant/$session/structural/*mprage.nii.gz ] #mprage
@@ -131,7 +131,7 @@ struc_logfile=$logdir/struc_data.pull_qc.log # if want to keep track of stuff in
             <img src=$participant-$session-mprage-qc.png height="350" width="700">
             <br> 
             
-            " >> $logdir/Quality_Control/QC_STRUCT_DATA.PULL.html
+            " >> $logdir/Quality_Control/QC_Preprocessing_pngs/QC_STRUCT_DATA.PULL.html
 
             elif [ -f $cest/$participant/$session/structural/*INV2.nii.gz ] \
                 && [ -f $cest/$participant/$session/structural/*UNI_Images.nii.gz ] #INV2 & UNI
@@ -144,7 +144,7 @@ struc_logfile=$logdir/struc_data.pull_qc.log # if want to keep track of stuff in
             <img src=$participant-$session-UNI-qc.png height="350" width="700">
             <br> 
             
-            " >> $logdir/Quality_Control/QC_STRUCT_DATA.PULL.html
+            " >> $logdir/Quality_Control/QC_Preprocessing_pngs/QC_STRUCT_DATA.PULL.html
             fi 
 
             else
