@@ -46,7 +46,7 @@ cest_logfile=$logdir/cest_inputs_qc.log
             <br><strong><font size="5" color="1814A1">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;B0 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; B1 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&nbsp;&nbsp;B0B1-corrected CEST</font></strong><br>
             <br>
 
-            " >> $logdir/Quality_Control/QC_Preprocessing_pngs/QC_GUI_CEST.html
+            " >> $logdir/Quality_Control/QC_inputs_pngs/QC_inputs_CEST.html
             fi
 
             slicer $inputs/$ses/*B0map.nii -i -1.3 1.3 -a $logdir/Quality_Control/QC_inputs_pngs/$ses-B0MAP-qc.png
