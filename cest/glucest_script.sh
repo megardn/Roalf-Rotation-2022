@@ -18,10 +18,10 @@
    #GUI CEST niftis ($cest/$case/*-B0map.nii, $cest/$case/*-B1map.nii & $cest/$case/*-B0B1CESTmap.nii)
    #FAST segmentations of structural images from structural_script-ML.sh
       # 3-part segmentation ($outputs/$case/structural/fast/${case}_seg.nii.gz)
-      # GM segmentation ($outputs/$case/structural/fast/${case}_prob_1.nii.gz)
+      # GM segmentation ($outputs/$case/structural/fast/${case}_seg_1.nii.gz)
 #OUTPUTS:
   #FAST 3-part segmentation in 2D CEST slab ($outputs/$case/fast/$case-2d-FAST.nii)
-  #probabalistic GM mask in 2D CEST slab ($outputs/$case/fast/$case-2d-FASTGMprob.nii)
+  #GM mask in 2D CEST slab ($outputs/$case/fast/$case-2d-FASTGMseg.nii)
   #non-CSF segmentation ($outputs/$case/fast/$case-tissuemap-bin.nii.gz)
   #non-CSF mask ($outputs/$case/fast/$case-tissuemap-bin.nii.gz)
   #thresholded, brain-masked and CSF-excluded GluCEST image ($outputs/$case/$case-GluCEST.nii.gz)
@@ -86,9 +86,9 @@ echo "## ALIGN FSL FAST OUTPUT TO GLUCEST IMAGES ##"
 #check after running structural script to make sure that ONM vs Terra branching isn't needed in this chunk
 
 /project/bbl_projects/apps/melliott/scripts/extract_slice2.sh -MultiLabel $outputs/$case/structural/fast/${case}_seg.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/fast/$case-2d-FAST.nii
-gzip $outputs/$case/fast/$case-2d-FAST.nii  #FAST 3-part segmentation in 2D CEST slab (no partial volumes or probabilities, just segmentation 1 - 3ß segmentation)
-/project/bbl_projects/apps/melliott/scripts/extract_slice2.sh $outputs/$case/structural/fast/${case}_prob_1.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/fast/$case-2d-FASTGMprob.nii
-gzip $outputs/$case/fast/$case-2d-FASTGMprob.nii #probabalistic GM mask in 2D CEST slab
+gzip $outputs/$case/fast/$case-2d-FAST.nii  #FAST 3-part segmentation in 2D CEST slab (no partial volumes or probabilities, just segmentation 1 - 3 segmentation)
+/project/bbl_projects/apps/melliott/scripts/extract_slice2.sh $outputs/$case/structural/fast/${case}_seg_1.nii.gz $cest/$case/*-B0B1CESTmap.nii $outputs/$case/fast/$case-2d-FASTGMseg.nii
+gzip $outputs/$case/fast/$case-2d-FASTGMseg.nii #GM mask in 2D CEST slab
 #######################################################################################################
 ## APPLY THRESHOLDED B0 MAP, B1 MAP, and TISSUE MAP (CSF removed) TO GLUCEST IMAGES ##
 echo "## APPLY THRESHOLDED B0 MAP, B1 MAP, and TISSUE MAP (CSF removed) TO GLUCEST IMAGES ##"
