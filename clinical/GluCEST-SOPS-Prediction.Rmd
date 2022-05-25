@@ -351,6 +351,13 @@ sops_dx.sum <- sops_dx.final %>%
                                  dx_other == TRUE ~ "other",
                                  dx_control == TRUE ~ "none")))
 
+#adding a base_dx indicator, since if we're predicting outcomes we'd know this (though maybe v correlated with intercept)
+
+sops_dx.sum <- sops_dx.sum %>%
+  group_by(BBLID, SCANID) %>%
+  mutate(base_dx=first(diagnosis)) %>%
+  ungroup()
+
 sops_dx.sum %>% 
   ggplot(aes(y=BBLID, x=scan.time, color=diagnosis)) + geom_point()
 ```
@@ -564,11 +571,30 @@ final.df %>%
            )
 ```
 
-Look at CEST data by scanner
+Look at CEST data by scanner - *LOOK AT SCORE DISTRIBUTION ACROSS BOTH SAMPLES*
 
 ```{r}
 final.df %>% select(scanner | contains("Thalamus")) %>% ggpairs(aes(color=scanner))
 ```
+
+Are CEST values or demographics different across scanners?
+
+```{r}
+#check for differences in baseline diagnoses
+chisq.test(final.df$scanner, final.df$base_dx, simulate.p.value=TRUE)
+#check for differences in scan age
+chisq.test(final.df$scanner, final.df$age_scan, simulate.p.value=TRUE)
+#check for differences in baseline SOPS Positive
+final.df %>% filter(scan.time=="base.1")%>%
+  t.test(sops_p ~ scanner, data=.)
+
+#check for differences in thalamic CEST
+t.test(R_Thalamus_mean ~ scanner, data = final.df)
+#check for differences in thalamic volume captured
+t.test(R_Thalamus_numvoxels ~ scanner, data = final.df)
+```
+
+Scanner is *not significantly* related to baseline diagnosis or baseline SOPS positive score but *is significantly* related to CEST contrast (averaged over thalamus), number of thalamic volumes captured, and age at scan. 
 
 Look at correlations between lifetime psych rx and diagnosis - unsurprisingly these are highly correlated values
 
@@ -601,47 +627,72 @@ final.df %>%
 
 Most variation in lifetime meds and clinical change for prodrome observations.
 
-Boxplots of baseline dx vs various paramaeters
-
-Looking at baseline diagnosis vs change GAF
+Look at CEST data by diagnosis and diagnostic category
 
 ```{r}
-ggplot(sops_change_meds.life, aes(x=age_scan, y=slope.gafc, color=baseline.dx)) +
+final.df %>% select(diagnosis | contains("Thalamus")) %>% distinct() %>% ggpairs(aes(color=diagnosis))
+
+final.df %>% 
+  group_by(BBLID) %>%
+  arrange(DOSIPS) %>% #get first timepoint for baseline dx
+  slice_head() %>% #get first timepoint for baseline dx
+  ungroup() %>%
+  select(dx_control | contains("Thalamus")) %>% 
+  distinct() %>% 
+  ggpairs(aes(color=dx_control))
+```
+
+Looking at baseline diagnosis vs GAF
+
+```{r}
+ggplot(final.df, aes(x=sips_diff_days, y=GAF_C, color=base_dx)) +
   geom_point() +
-  xlab("Age at Scan") +
-  ylab("GAF Slope") + 
-  ggtitle("Change in GAF by Observation") + 
-  theme_bw() + 
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  xlab("Time from Scan") +
+  ylab("GAF") + 
+  ggtitle("GAF Progression by for Each Dx Category") + 
+  geom_smooth(method="lm") +
+  theme_bw()
+
+sum(is.na(final.df$GAF_C))
 ```
 
 ```{r}
-ggplot(sops_change_meds.life, aes(x=baseline.dx, y=slope.sops_tot, color=as.factor(psych.rx_life))) +
+ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=base_dx)) +
   geom_point() +
-  geom_jitter(width = 0.25) +
-  xlab("Baseline Dx") +
-  ylab("Slope of Total SOPS") + 
-  ggtitle("Change in SOPS by Observation") + 
-  theme_bw() + 
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  xlab("Time from Scan") +
+  ylab("SOPS Positive Score") + 
+  ggtitle("SOPS-P Progression by for Each Dx Category") + 
+  geom_smooth(method="lm") +
+  theme_bw()
+```
+
+All groups appear to have relatively stable SOPS-P scores when averaged across individuals. But can CEST values predict and individual's change?
+
+```{r}
+ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=BBLID)) +
+  geom_point() +
+  xlab("Time from Scan") +
+  ylab("SOPS Positive Score") + 
+  ggtitle("SOPS-P Progression by for Each Subject") + 
+  geom_smooth(method="lm",se = FALSE) +
+  theme_bw()
 ```
 
 # Modeling
 
-Plotting simple linear model for visualiation
+Plotting simple linear model for visualization
 
 ```{r}
-ggplot(data = final.df, mapping = aes(x = sips_diff_days, y = sops_tot)) +
+ggplot(data = final.df, mapping = aes(x = sips_diff_days, y = sops_p)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
   geom_smooth(method = "lm", na.rm = T, col = "black", se = F) +
   theme(legend.position = "right")
 ```
 
-Playing around with [MEMs](https://yury-zablotski.netlify.app/post/mixed-effects-models-1/).
-
+Playing around with MEMs
 
 ```{r}
-lmer.1 <- lmer(sops_tot ~ sips_diff_days + (1|BBLID), REML = T, data = final.df)
+lmer.1 <- lmer(sops_p ~ sips_diff_days + (1|BBLID), REML = T, data = final.df)
 
 model_coefs <- coef(lmer.1)$BBLID %>% 
   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
@@ -649,7 +700,7 @@ model_coefs <- coef(lmer.1)$BBLID %>%
 
 model1.data <- left_join(final.df, model_coefs, by="BBLID")
 
-ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_tot)) +
+ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
   geom_abline(aes(intercept = Intercept, 
                   slope = Slope,
@@ -667,7 +718,7 @@ Scaling data so model will converge
 ```{r}
 final.df_scaled <- final.df %>% mutate_if(is.numeric, scale)
 
-lmer.2 <- lmer(sops_tot ~  (1 + sips_diff_days|BBLID), REML = F, data = final.df_scaled )
+lmer.2 <- lmer(sops_p ~  (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
 
 model_coefs2 <- coef(lmer.2)$BBLID %>% 
   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
@@ -678,7 +729,7 @@ model_coefs2 <- coef(lmer.2)$BBLID %>%
 
 model2.data <- left_join(final.df_scaled, model_coefs2, by="BBLID")
 
-ggplot(data = model2.data, mapping = aes(x = sips_diff_days, y = sops_tot)) +
+ggplot(data = model2.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
   geom_abline(aes(intercept = Intercept, 
                   slope = Slope,
@@ -693,18 +744,18 @@ summary(lmer.2)
 ```
 
 ```{r}
-lmer.3 <- lmer(sops_tot ~  R_Thalamus_mean + sips_diff_days + gm.R_Thalamus_numvoxels + scanner + diagnosis + (1|BBLID), REML = T, data = final.df_scaled )
+lmer.3 <- lmer(sops_p ~  R_Thalamus_mean + (sips_diff_days|BBLID), REML = T, data = final.df_scaled )
 
 model_coefs3 <- coef(lmer.3)$BBLID %>% 
   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
   rownames_to_column("BBLID")
 
- relgrad <- with(lmer.2@optinfo$derivs,solve(Hessian,gradient))
+ relgrad <- with(lmer.3@optinfo$derivs,solve(Hessian,gradient))
  max(abs(relgrad))
 
 model3.data <- left_join(final.df_scaled, model_coefs3, by="BBLID")
 
-ggplot(data = model3.data, mapping = aes(x = sips_diff_days, y = sops_tot)) +
+ggplot(data = model3.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
   geom_abline(aes(intercept = Intercept, 
                   slope = Slope,
@@ -719,7 +770,39 @@ summary(lmer.3)
 anova(lmer.3)
 ```
 
+```{r}
+lmer.4 <- lmer(sops_p ~  R_Thalamus_mean + gm.R_Thalamus_numvoxels + base_dx + age_scan + scanner + Sex_1M + psych.rx_life + (sips_diff_days|BBLID), REML = T, data = final.df_scaled) ## try correcting for scanner instead of gm vol?! try combat?
+
+model_coefs4 <- coef(lmer.4)$BBLID %>% 
+  rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+  rownames_to_column("BBLID")
+
+ relgrad <- with(lmer.2@optinfo$derivs,solve(Hessian,gradient))
+ max(abs(relgrad))
+
+model4.data <- left_join(final.df_scaled, model_coefs4, by="BBLID")
+
+ggplot(data = model4.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
+  geom_point(na.rm = T, aes(col = BBLID)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = BBLID
+                  ),
+              size = 0.5
+              ) +
+  theme(legend.position = "right") +
+  ggtitle("Model on Scaled Numeric Data")
+
+summary(lmer.4)
+anova(lmer.4)
+```
+
 # Appendix
+
+## MEM Resources
++ UCLA [INTRODUCTION TO LINEAR MIXED MODELS](https://stats.oarc.ucla.edu/other/mult-pkg/introduction-to-linear-mixed-models/)
++ Bodo Winter's [Tutorial](https://bodowinter.com/tutorial/bw_LME_tutorial1.pdf)
++ Dr. Yury Zablotski's [yuzaR-Blog](https://bodo-winter.net/tutorials.html)
 
 ## Calculating % Change
 Removed because it resulted in irritating and uninterpretable inf values.
