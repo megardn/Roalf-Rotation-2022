@@ -8,7 +8,7 @@ output: html_document
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff, GGally)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff, GGally, atable, glmnet)
 ```
 
 
@@ -358,7 +358,11 @@ sops_dx.sum <- sops_dx.sum %>%
   group_by(BBLID, SCANID) %>%
   mutate(base_dx=first(diagnosis),
          base_gafc=first(GAF_C),
-         base_sops_p=first(sops_p)) %>%
+         base_sops_p=first(sops_p),
+         delta_sops=sops_p-base_sops_p,
+         sops_cat = as.factor(case_when(delta_sops<0 ~ "remit",
+                                        delta_sops==0 ~ "stable",
+                                        delta_sops>0 ~ "progress")))%>%
   ungroup()
 
 sops_dx.sum %>% 
@@ -482,7 +486,8 @@ Read back in and merge coded lifetime meds:
 
 ```{r}
 meds.coded <- read.csv("data/med_lifetime_comp.CODED.csv", header = TRUE, stringsAsFactors = F, na="") %>%
-  select(observation, psych.rx_life)
+  select(observation, psych.rx_life) %>%
+  mutate(psych.rx_life=as.factor(psych.rx_life))
 
 sops_change_meds.life <- left_join(sops_dx.sum.filt, meds.coded, by="observation")
 n_unique(sops_change_meds.life$observation)
@@ -495,7 +500,7 @@ n_unique(sops_change_meds.life$observation)
 Read in processed CEST values from Harvard Oxford Subcortical Atlas ROIs:
 
 ```{r}
-cest.rois <- read.csv("/Users/megardn/ImageData/PMACS_remote/data/cest_values/GluCEST-HarvardOxford-Subcortical-Measures.csv", header = TRUE, stringsAsFactors = F, sep = '\t', na="NaN")
+cest.rois <- read.csv("data/GluCEST-HarvardOxford-Subcortical-Measures.csv", header = TRUE, stringsAsFactors = F, sep = '\t', na="NaN")
 skim(cest.rois)
 
 #clean up a bit
@@ -505,7 +510,7 @@ cest.vals <- cest.rois %>%
   select(-Subject)
 
 #GM voxels
-cest.gm.rois <- read.csv("/Users/megardn/ImageData/PMACS_remote/data/cest_values/GMDensity-HarvardOxford-Subcortical-Measures.csv", header = TRUE, stringsAsFactors = F, sep = '\t', na="NaN")
+cest.gm.rois <- read.csv("data/GM-HarvardOxford-Subcortical-Measures.csv", header = TRUE, stringsAsFactors = F, sep = '\t', na="NaN")
 
 #clean up a bit
 gm.vals <- cest.gm.rois %>%
@@ -516,8 +521,6 @@ gm.vals <- cest.gm.rois %>%
 ```
 
 ALL SCANS HAVE RIGHT THALAMUS DATA!
-
-*NOTE: 1 SUBJECT HAS 2 SCANS, FILTER DOWN TO SCAN WITH BETTER QC OR MORE SOPS FOLLOWUPS*
 
 one subject also weirdly has GM values in `L_CerebralWM_mean`, outputting scan ID so I can look at the niftis
 
@@ -531,12 +534,15 @@ Looks like slab was placed across the midline, seeing if other scans have compar
 gm.vals %>% filter(!is.na(gm.R_CerebralWM_numvoxels)) %>% select(scanid, gm.R_CerebralWM_numvoxels)
 ```
 
-Seems like having errant GM voxels (calculated probablistically via FAST) isn't uncommon in WM (as defined by HO Subcortical atlas), what makes 94276_10927 unique is slab orientation. **Will double check with David once final data is reprocessed.**
+Seems like having errant GM voxels (calculated probablistically via FAST) isn't uncommon in WM (as defined by HO Subcortical atlas), what makes 94276_10927 unique is slab orientation. 
 
-Merging cest values and filter to thalamic ROI
+Merging cest values, remove wonky mOFC data and filter to thalamic ROI
 
 ```{r}
-all.cest <- merge(cest.vals, gm.vals, by="scanid")
+all.cest <- merge(cest.vals, gm.vals, by="scanid") %>%
+  filter(!scanid %in% c("105176_9332", "132179_9726", "92886_9087", "87225_9459", "94028_9203"))
+
+sum(duplicated(all.cest$BBLID)) #no duplicate subjects remain
 
 r.thal.dat <- all.cest %>% select("scanid" | contains("R_Thalamus"))
 skim(r.thal.dat)
@@ -546,6 +552,8 @@ r.thal.dat %>% select(-scanid) %>% ggpairs()
 #check for correlation of thalamic volume captured and avg. CEST
 cor.test(r.thal.dat$R_Thalamus_mean, r.thal.dat$R_Thalamus_numvoxels, method=c("pearson"))
 ```
+
+# Final Dataframe
 
 Merging into other *FINAL DATASET*
 
@@ -557,7 +565,15 @@ final.df <- right_join(clin.to.merge, r.thal.dat, by="scanid")
 n_unique(final.df$observation)
 n_unique(final.df$BBLID)
 
+#scaled dataframe
 final.df_scaled <- final.df %>% mutate_if(is.numeric, scale)
+
+#baseline only
+final.base <- final.df %>% filter(scan.time=="base.1") %>%
+  mutate(sex=recode_factor(Sex_1M, `1`="Male", `2`="Female"))
+
+#followups only - scaled
+final.end_scaled <- final.df %>% filter(scan.time != "base.1") %>% mutate_if(is.numeric, scale)
 ```
 
 # EDA
@@ -579,13 +595,44 @@ final.df %>%
            )
 ```
 
-Look at CEST data by scanner - *LOOK AT SCORE DISTRIBUTION ACROSS BOTH SAMPLES*
+## Between-Scanner Differences
+
+### Baseline Demographics and Observation Counts
+
+```{r}
+demo <- final.df %>% filter(scan.time=="base.1") %>%
+  group_by(scanner) %>%
+  summarise(n = n(),
+            age=mean(age_scan),
+            age_sd=sd(age_scan))
+
+demo.base <- atable(final.base, 
+         target_cols=c("sex", "age_scan", "Race", "Ethnicity", "base_dx", "TYPE", "base_sops_p", "base_gafc", "psych.rx_life"),
+         group_col="scanner",
+         format_to="HTML")
+
+tpt.table <- atable(final.df,
+                    target_cols=c("scan.time", "age_sops", "sips_diff_yrs", "diagnosis", "sops_p", "sops_n", "sops_d", "sops_g", "GAF_C", "psych.rx_life"),
+                    group_col="scanner",
+                    format_to="HTML")
+```
+
+### CEST Values
+
+Compare Thalamic CEST data by scanner:
 
 ```{r}
 final.df %>% select(scanner | contains("Thalamus")) %>% ggpairs(aes(color=scanner))
+
+cest.table <- atable(final.base,
+       target_cols=c("R_Thalamus_mean", "R_Thalamus_numvoxels", "gm.R_Thalamus_mean", "gm.R_Thalamus_numvoxels"),
+       group_col="scanner",
+       format_to = "HTML")
 ```
 
-Are CEST values or demographics different across scanners?
+### Significance Testing
+
+Are CEST values or demographics significantly different between scanners?
 
 ```{r}
 #check for differences in baseline diagnoses
@@ -607,7 +654,9 @@ summary(m.cest.vol)
 Anova(m.cest.vol)
 ```
 
-Scanner is *not significantly* related to baseline diagnosis or baseline SOPS positive score but *is significantly* related to CEST contrast (averaged over thalamus), number of thalamic volumes captured, and age at scan. Even after controlling for scanner, number of voxels is significantly associated with mean CEST value in the thalamus: therefore both scanner and volume will be controlled for in the final model.
+Scanner is *not significantly* related to baseline diagnosis or baseline SOPS positive score but *is significantly* related to CEST contrast (averaged over thalamus), number of thalamic volumes captured, and age at scan. After controlling for scanner, number of voxels *is not* significantly associated with mean CEST value in the thalamus, therefore scanner (but not volume) will be controlled for in the final model.
+
+## Clinical Values
 
 Look at correlations between lifetime psych rx and diagnosis - unsurprisingly these are highly correlated values
 
@@ -616,34 +665,37 @@ kruskal.test(final.df$psych.rx_life~final.df$diagnosis)
 
 ggplot(final.df) + 
   geom_count(aes(x = factor(diagnosis), y = as.factor(psych.rx_life))) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-final.df %>% 
-  group_by(BBLID) %>%
-  sample_n(1) %>% #random selection
-  ggplot(aes(x = diagnosis, y = GAF_C)) +
-  geom_point(aes(color=as.factor(psych.rx_life)), show.legend = TRUE) +
-  geom_jitter(width = 0.25) +
-  theme(axis.text.x = element_text(angle = 45, hjust=1)) +
-  ggtitle("GAF vs Axis 1 Dx")
-
-final.df %>% 
-  group_by(BBLID) %>%
-  sample_n(1) %>% #random selection
-  ggplot(aes(x = diagnosis, y = sops_tot )) +
-  geom_point(aes(color=as.factor(psych.rx_life)), show.legend = TRUE) +
-  geom_jitter(width = 0.25) +
-  theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
   ggtitle("SOPS Total Score vs Axis 1 Dx")
+
+# final.df %>% 
+#   group_by(BBLID) %>%
+#   sample_n(1) %>% #random selection
+#   ggplot(aes(x = diagnosis, y = GAF_C)) +
+#   geom_point(aes(color=psych.rx_life), show.legend = TRUE) +
+#   geom_jitter(width = 0.25) +
+#   theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+#   ggtitle("GAF vs Axis 1 Dx")
+
+final.df %>% 
+  group_by(BBLID) %>%
+  ggplot(aes(x = diagnosis, y = sops_p, color=psych.rx_life)) +
+  geom_point(aes(color=psych.rx_life), show.legend = TRUE) +
+  geom_jitter(width = 0.25) +
+  theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  ggtitle("SOPS Positive Score vs Axis 1 Dx")
 ```
-*not sure why some points are black, no `psych.rx_life` vals missing*
 
-Most variation in lifetime meds and clinical change for prodrome observations.
+Higher SOPS P scores are predictably related to psychosis diagnosis and psychiatric medication.
 
-Look at CEST data by diagnosis and diagnostic category
+Look at CEST data by diagnosis and diagnostic category:
 
 ```{r}
-final.df %>% select(diagnosis | contains("Thalamus")) %>% distinct() %>% ggpairs(aes(color=diagnosis))
+#plots
+final.df %>% select(base_dx | contains("Thalamus")) %>% 
+  filter(base_dx != "other") %>% #too few other dx, need to remove
+ggpairs(aes(color=base_dx)) +
+  ggtitle("Thalamic Cest Values by Baseline Diagnosis")
 
 final.df %>% 
   group_by(BBLID) %>%
@@ -652,8 +704,17 @@ final.df %>%
   ungroup() %>%
   select(dx_control | contains("Thalamus")) %>% 
   distinct() %>% 
-  ggpairs(aes(color=dx_control))
+  mutate(dx_control=recode_factor(as.factor(dx_control), 'TRUE'="Control", 'FALSE'="Patient")) %>%
+  ggpairs(aes(color=dx_control)) +
+  ggtitle("Thalamic Cest Values: Patients vs Controls")
+
+#linear model
+lm.dx <- lm(R_Thalamus_mean ~ scanner + base_dx + Sex_1M + age_scan, data=final.base)
+summary(lm.dx)
+Anova(lm.dx)
 ```
+
+Overall, baseline diagnosis does not appear to be signficantly associated with thalamic cest when controlling for sex, age and scanner type, while scanner type does remain predictive.
 
 Looking at baseline diagnosis vs GAF
 
@@ -691,9 +752,31 @@ ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=BBLID)) +
   theme_bw()
 ```
 
+```{r}
+#plot of change by dx
+final.df_scaled_end %>%
+  ggplot() + 
+  geom_histogram(aes(x = delta_sops, fill=base_dx, color=base_dx), position="dodge", alpha=0.5) +
+  ggtitle("Change in SOPS Positive Score by Baseline Diagnosis")
+```
+Plot change in sops positive by glutamate (similar to egerton et al fig 2)
+
+```{r}
+final.df_scaled_end %>%
+  filter(base_dx=="pro"| base_dx=="psych")
+ggplot(data = final.df_scaled_end, mapping = aes(x = R_Thalamus_mean, y = delta_sops)) +
+  geom_point(na.rm = T, aes(col = diagnosis)) +
+  geom_smooth(method = "lm", na.rm=T, col = "black", se=T) +
+  theme(legend.position = "right") +
+  labs(title="Thalamic Glutamate by Change in SOPS Positive \n Among Prodrome and Psychosis Pts (Scaled)",
+        x ="Thalamic Glutamate Contrast", y = "Change in SOPS Positive", color="Endpoint Diagnosis")
+```
+
+The plot is vaguely suggestive of that in Egerton et al, but clearly not as significant. However, these are scaled raw values while their plot reported "Baseline thalamic glutamate level, adjusted for baseline attenuated positive symptom score".
+
 # Modeling
 
-Plotting simple linear model for visualization
+Plotting simple linear model for visualization.
 
 ```{r}
 ggplot(data = final.df, mapping = aes(x = sips_diff_days, y = sops_p)) +
@@ -701,34 +784,36 @@ ggplot(data = final.df, mapping = aes(x = sips_diff_days, y = sops_p)) +
   geom_smooth(method = "lm", na.rm = T, col = "black", se = F) +
   theme(legend.position = "right")
 ```
+At the population level, SOPS Positive scores remained stable over time.
 
-Lm to look for any interaction of thalamic CEST and diagnosis:
+Lm to look for any interactions of thalamic CEST and diagnosis:
 ```{r}
-lm.int <- lm(sops_p ~ R_Thalamus_mean + base_dx + R_Thalamus_mean*base_dx, data=final.df)
+lm.int <- lm(sops_p ~ R_Thalamus_mean*base_dx, data=final.df)
 Anova(lm.int)
 
-lm.int2 <- lm(sops_p ~ R_Thalamus_mean + R_Thalamus_numvoxels + R_Thalamus_mean*R_Thalamus_numvoxels, data=final.df)
+lm.int2 <- lm(sops_p ~ R_Thalamus_mean*R_Thalamus_numvoxels, data=final.df)
 Anova(lm.int2)
+
+lm.int3 <- lm(sops_p ~ R_Thalamus_mean*sips_diff_days, data=final.df)
+Anova(lm.int3)
 ```
 
+No evidence of meaningful interactions that should be included in the final model. 
+
+## Mixed Effects Models
+
+Using scaled data so model will converge more readily. Building models with predictors chosen based on a priori subject knowledge and relationships shown above, getting sequentially more complex to avoid overfitting.
 
 ```{r}
-lm.nonlin <- lm(sops_p ~  R_Thalamus_mean + R_Thalamus_numvoxels + base_dx + age_scan + scanner + Sex_1M + psych.rx_life + sips_diff_days + BBLID, data = final.df_scaled)
-Anova(lm.nonlin)
-plot(resid(lm.nonlin),final.df$sops_p)
-plot(final.df$AGEONSET_CLINICRISK, final.df$sops_p)
-```
+lmer.1 <- lmer(sops_p ~ sips_diff_days + (1|BBLID), REML = T, data = final.df_scaled)
+summary(lmer.1)
 
-Playing around with MEMs
-
-```{r}
-lmer.1 <- lmer(sops_p ~ sips_diff_days + (1|BBLID), REML = T, data = final.df)
-
+#plot
 model_coefs <- coef(lmer.1)$BBLID %>% 
   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
   rownames_to_column("BBLID")
 
-model1.data <- left_join(final.df, model_coefs, by="BBLID")
+model1.data <- left_join(final.df_scaled, model_coefs, by="BBLID")
 
 ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
@@ -741,23 +826,18 @@ ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
   theme(legend.position = "right")
 ```
 
-**remove 1 scan for ppt with 2!**
-
-Scaling data so model will converge
 
 ```{r}
-lmer.2 <- lmer(sops_p ~  (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+lmer.2 <- lmer(sops_p ~ base_dx + (1 + sips_diff_yrs|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.2)
 
+#plot
 model_coefs2 <- coef(lmer.2)$BBLID %>% 
-  rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+  rename(Intercept = `(Intercept)`, Slope = sips_diff_yrs) %>% 
   rownames_to_column("BBLID")
-
- relgrad <- with(lmer.2@optinfo$derivs,solve(Hessian,gradient))
- max(abs(relgrad))
-
 model2.data <- left_join(final.df_scaled, model_coefs2, by="BBLID")
 
-ggplot(data = model2.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
+ggplot(data = model2.data, mapping = aes(x = sips_diff_yrs, y = sops_p)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
   geom_abline(aes(intercept = Intercept, 
                   slope = Slope,
@@ -767,19 +847,23 @@ ggplot(data = model2.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
               ) +
   theme(legend.position = "right") +
   ggtitle("Model on Scaled Numeric Data")
-
-summary(lmer.2)
 ```
 
+
+Simple random slopes model $lmer(sops_p ~ (1 + sips_diff_yrs|BBLID), REML = T, data = final.df_scaled)$ singular with correlation of -1, because ppts with higher intercepts have more negative slopes (i.e. worse baseline sxs -> generally more improvement). Adding `base_dx` term resolves this singularity (i.e. shakes up this colinearity) by (it seems) accounting for intercept values outside of the random effect of `BBLID`.
+
+Adding standard demographics (sex and age at scan)
+
 ```{r}
-lmer.3 <- lmer(sops_p ~  R_Thalamus_mean + (sips_diff_days|BBLID), REML = T, data = final.df_scaled)
+lmer.3 <- lmer(sops_p ~ Sex_1M + age_scan + base_dx + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.3)
+#Anova(lmer.3)
+
+#plot
 
 model_coefs3 <- coef(lmer.3)$BBLID %>% 
   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
   rownames_to_column("BBLID")
-
- relgrad <- with(lmer.3@optinfo$derivs,solve(Hessian,gradient))
- max(abs(relgrad))
 
 model3.data <- left_join(final.df_scaled, model_coefs3, by="BBLID")
 
@@ -793,23 +877,21 @@ ggplot(data = model3.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
               ) +
   theme(legend.position = "right") +
   ggtitle("Model on Scaled Numeric Data")
-
-summary(lmer.3)
-Anova(lmer.3)
 ```
 
-```{r}
-lmer.4 <- lmer(sops_p ~  R_Thalamus_mean + R_Thalamus_numvoxels + age_scan + scanner + Sex_1M + base_dx + (sips_diff_days|BBLID), REML = T, data = final.df_scaled) ## try correcting for scanner instead of gm vol?! try combat?
+Adding in CEST values along with scanner, since Thalamic glucest contrast varies significantly between scanner.
 
+```{r}
+lmer.4 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_dx + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.4)
+Anova(lmer.4)
+
+
+#plot
 model_coefs4 <- coef(lmer.4)$BBLID %>% 
   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
   rownames_to_column("BBLID")
-
- relgrad <- with(lmer.2@optinfo$derivs,solve(Hessian,gradient))
- max(abs(relgrad))
-
 model4.data <- left_join(final.df_scaled, model_coefs4, by="BBLID")
-
 ggplot(data = model4.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
   geom_abline(aes(intercept = Intercept, 
@@ -820,32 +902,105 @@ ggplot(data = model4.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
               ) +
   theme(legend.position = "right") +
   ggtitle("Model on Scaled Numeric Data")
-
-summary(lmer.4)
-Anova(lmer.4)
 ```
 
-*how well does model fit?*
+Given the small sample size, it's risky to add more predictors. However, we'll try just adding the lifetime psych medication indicator. 
+
+```{r}
+lmer.5 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_dx + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.5)
+Anova(lmer.5)
+```
+
+Even though `psych.rx_life` is very predictive of `sops_p` at a given timepoint, is not so much a predictor of interest (since if you know whether someone is taking psychiatric meds you probably also know their positive sxs); it's included because we want to control for it when testing the significance of the other predictors (because meds may affect glucest contrast and/or sops positive score).
+
+Switching out baseline sops positive (`base_sops_p`) for `base_dx` results in a singular fit.
+
+```{r}
+lmer.6 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.6)
+Anova(lmer.6)
+```
+
+Finally, I'll fit a full model without CEST data for comparison.
+
+```{r}
+lmer.7 <- lmer(sops_p ~ Sex_1M + age_scan + base_dx + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.7)
+Anova(lmer.7)
+```
+
+Using anova to compare model fit on chi-sq:
+
+```{r}
+anova(lmer.2, lmer.3, lmer.4)
+```
+
 "The residual variance estimate can be thought of as the within groups variance and each random effect variance estimate can be thought of as a between groups estimate"
 
 Diagnostics
 ```{r}
 #linearity - plotting residuals
 plot(lmer.4)
-#normality - plotting quantlies
+#normality - plotting quantiles
 qqnorm(residuals(lmer.4))
 ```
 
 Heteroscedastic - model fits less well at higher (and more important) sops_p scores
 
-nonrandom slopes on endpoint data
+nonrandom slopes on endpoint data - 
 
 ```{r}
-final.df_scaled_end <- final.df_scaled %>% filter(scan.time != "base.1")
-lmer.end <- lmer(sops_p ~ sips_diff_days + R_Thalamus_mean + R_Thalamus_numvoxels + R_Thalamus_mean*R_Thalamus_numvoxels + age_sops + scanner + Sex_1M + base_sops_p + (1|BBLID), REML = T, data = final.df_scaled_end)
+lmer.end <- lmer(sops_p ~ sips_diff_days*R_Thalamus_mean + R_Thalamus_numvoxels + age_sops + scanner + Sex_1M + base_sops_p + psych.rx_life + (1|BBLID), REML = T, data = final.df_scaled_end)
 
 summary(lmer.end)
 Anova(lmer.end)
+```
+
+nonrandom slopes on change
+
+```{r}
+lmer.change <- lmer(delta_sops ~ sips_diff_days + R_Thalamus_mean + R_Thalamus_numvoxels + age_sops + scanner + Sex_1M + base_sops_p + psych.rx_life + (1|BBLID), REML = T, data = final.df_scaled_end)
+
+summary(lmer.change)
+Anova(lmer.change)
+```
+
+
+Binarized improvement (delta_sops < 0) vs worsening of symptoms (delta_sops > 0) - logistic regression
+
+```{r}
+final.end_scaled <- final.end_scaled %>%
+  mutate(sops_worse = case_when(sops_cat == "remit" ~ 0,
+                                sops_cat == "stable" ~ 0,
+                                sops_cat == "progress" ~ 1))
+#check if binarized correctly
+#table(final.df_scaled_end$sops_cat, final.df_scaled_end$sops_worse)
+
+fit.logit <- glmer(sops_worse ~ sips_diff_days + age_scan + Sex_1M + base_sops_p + (1|BBLID), final.end_scaled, family=binomial(logit))
+summary(fit.logit)
+Anova(fit.logit)
+summary(rePCA(fit.logit))
+
+#try prediction
+fit.logit.predict <- predict(fit.logit, final.end_scaled, type="response") 
+
+# #plot
+# model_coefs <- coef(fit.logit)$BBLID %>% 
+#   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+#   rownames_to_column("BBLID")
+# 
+# model1.data <- left_join(final.end, model_coefs, by="BBLID")
+# 
+# ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_bin)) +
+#   geom_point(na.rm = T, aes(col = BBLID)) +
+#   geom_abline(aes(intercept = Intercept, 
+#                   slope = Slope,
+#                   colour = BBLID
+#                   ),
+#               size = 0.5
+#               ) +
+#   theme(legend.position = "right")
 ```
 
 # Appendix
@@ -857,6 +1012,85 @@ Anova(lmer.end)
 + Using [REML](https://stats.stackexchange.com/questions/48671/what-is-restricted-maximum-likelihood-and-when-should-it-be-used)
 + Comparing models with [AIC](https://stats.stackexchange.com/questions/131272/lme4-why-is-aic-no-longer-displayed-when-using-reml)
 + interpreting summary [outputs](http://bayes.acs.unt.edu:8083/BayesContent/class/Jon/Benchmarks/LinearMixedModels_JDS_Dec2010.pdf)
++ assessing [goodness of fit](https://stats.stackexchange.com/questions/37944/what-are-easy-to-interpret-goodness-of-fit-measures-for-linear-mixed-effects-mo), also [here](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5426279/)
++ repeated measures [info](https://landscape-agroecology.com/mixed-effects-models-in-r/)
++ random effects [correlation outputs](https://stats.stackexchange.com/questions/320978/understanding-and-coding-random-intercept-correlation-lmer)
++ random effects correlation, [specifically singularity when modeling a subject ID intercept and time slope](https://stat.ethz.ch/pipermail/r-help//2009-November/412590.html)
+
+```{r}
+tim=rep(10:19,10)
+id=rep(1:10,each=10)
+rand.int=rep(rnorm(10,0,1),each=10)
+rand.slop=rep(rnorm(10,0,1),each=10)
+e=rnorm(100,0,0.5)
+
+y1=10+rand.int+tim+e
+y2=10+rand.int+tim+e
+y3=10+rand.int+tim+rand.slop*tim+e
+
+reg1=lmer(y1~tim+(tim|id))
+summary(reg1)
+
+reg2=lmer(y2~tim+(tim|id))
+summary(reg2)
+
+#plot
+reg2_coef <- coef(reg2)$id %>% 
+  rename(Intercept = `(Intercept)`, Slope = tim) %>% 
+  rownames_to_column("id")
+y2.data <- data.frame(y2, tim, id) %>%
+  mutate(id=as.character(id))
+reg2.data <- left_join(y2.data, reg2_coef, by="id")
+
+ggplot(data = reg2.data, mapping = aes(x = tim, y = y2)) +
+  geom_point(na.rm = T, aes(col = id)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = id
+                  ),
+              size = 0.5
+              )
+
+reg2a=lmer(y2~tim+(1|id))
+summary(reg2a)
+
+#plot
+reg2a_coef <- coef(reg2a)$id %>% 
+  rename(Intercept = `(Intercept)`, Slope = tim) %>% 
+  rownames_to_column("id")
+reg2a.data <- left_join(y2.data, reg2a_coef, by="id")
+
+ggplot(data = reg2a.data, mapping = aes(x = tim, y = y2)) +
+  geom_point(na.rm = T, aes(col = id)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = id
+                  ),
+              size = 0.5
+              )
+
+reg2b=lmer(y2~tim+(-1+tim|id))
+summary(reg2b)
+
+#plot
+reg2b_coef <- coef(reg2b)$id %>% 
+  rename(Intercept = `(Intercept)`, Slope = tim) %>% 
+  rownames_to_column("id")
+reg2b.data <- left_join(y2.data, reg2b_coef, by="id")
+
+ggplot(data = reg2b.data, mapping = aes(x = tim, y = y2)) +
+  geom_point(na.rm = T, aes(col = id)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = id
+                  ),
+              size = 0.5
+              )
+
+reg3=lmer(y3~tim+(tim|id))
+summary(reg3)
+
+```
 
 ## Calculating % Change
 Removed because it resulted in irritating and uninterpretable inf values.
