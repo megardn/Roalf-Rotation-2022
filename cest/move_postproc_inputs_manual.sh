@@ -1,47 +1,48 @@
 #!/bin/bash
 
-#manually cleaning up some atypical inputs not fully accounted for by `move_postproc_inpyts.py`
-base=/project/bbl_roalf_cest_predict/data/inputs
+#probably need to change dicom2nifti to dicom2nifti-unzip.sh - testing with unzip for now, dcm2niix exits w error on orig
+#/project/bbl_projects/apps/melliott/scripts/dicom2nifti.sh
 
+#manually converting and cleaning up some atypical inputs (mOFC data) not fully accounted for by `move_postproc_inpyts.py`
+base=/project/bbl_roalf_cest_predict/data/inputs
+dicoms=/project/bbl_roalf_cest_predict/data/dicom_anon
+logdir=/project/bbl_roalf_cest_predict/logs
+
+logfile=$logdir/mofc/mofc_convert_sort.log # if want to keep track of stuff in log file
+{
 #mOFC CEST INPUTS
-b0_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/105176/9332/data/DR/B0MAP/105176_9332_B0MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/DR/B0MAP/87225_9459_B0MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/B0MAP/92886_9087_B0MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B0map.nii"
-b1_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/105176/9332/data/DR/B1MAP/105176_9332_B1MAP_mOFC_DR.nii
- /project/bbl_roalf_cest_predict/data/data.pull/132179/9726/data/PR/B1MAP/132179_9726_B1MAP_mOFC_PR.nii /project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/DR/B1MAP/87225_9459_B1MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/B1MAP/92886_9087_B1MAP_mOFC_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B1map.nii"
-cest_pathlist="/project/bbl_roalf_cest_predict/data/data.pull/105176/9332/data/DR/105176_9332_mOFC_cest_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/132179/9726/data/PR/132179_9726_mOFC_cest_PR.nii /project/bbl_roalf_cest_predict/data/data.pull/87225/9459/data/87225_9459_mOFC_cest.nii /project/bbl_roalf_cest_predict/data/data.pull/92886/9087/data/DR/92886_9087_mOFC_cest_DR.nii /project/bbl_roalf_cest_predict/data/data.pull/94028/9203/data/GluCEST/mOFC/B0B1CESTmap.nii"
+for i in $(ls $dicoms) # script will only be executed for participants in this directory
+    do
+	sub=$(echo $i | cut -f1 -d_)
+	ses=$(echo $i | cut -f2 -d_)
 
 #B0
-for b0 in $b0_pathlist 
+	for b0 in $(ls $dicoms/${sub}_${ses}/*B0MAP*)
     do
-    sub=$(echo "$b0" | sed -r 's_^(/[^/]*){4}/([^/]*)/.*$_\2_g')
-    ses=$(echo "$b0" | sed -r 's_^(/[^/]*){5}/([^/]*)/.*$_\2_g')   
-
-    if [ ! -f $base/${sub}_${ses}/${sub}-${ses}-B0map.nii ]
-    then
-    cp $b0 $base/${sub}_${ses}/${sub}-${ses}-B0map.nii
-    fi          
+		if [ -f $base/${sub}_${ses}/${sub}-${ses}-B0map.nii ]
+		then
+		rm $base/${sub}_${ses}/${sub}-${ses}-B0map.nii
+		fi 
+		/project/bbl_projects/apps/melliott/scripts/dicom2nifti.sh -u -r Y -F $base/${sub}_${ses}/${sub}-${ses}-B0map.nii $dicoms/${sub}_${ses}/*B0MAP*/$b0
     done
 #B1
-for b1 in $b1_pathlist 
+	for b1 in $(ls $dicoms/${sub}_${ses}/*B1MAP*)
     do
-    sub=$(echo "$b1" | sed -r 's_^(/[^/]*){4}/([^/]*)/.*$_\2_g')
-    ses=$(echo "$b1" | sed -r 's_^(/[^/]*){5}/([^/]*)/.*$_\2_g')   
-
-    if [ ! -f $base/${sub}_${ses}/${sub}-${ses}-B1map.nii ]
-    then
-    cp $b1 $base/${sub}_${ses}/${sub}-${ses}-B1map.nii
-    fi         
+		if [ -f $base/${sub}_${ses}/${sub}-${ses}-B1map.nii ]
+		then
+		rm $base/${sub}_${ses}/${sub}-${ses}-B1map.nii
+		fi 
+		/project/bbl_projects/apps/melliott/scripts/dicom2nifti.sh -u -r Y -F $base/${sub}_${ses}/${sub}-${ses}-B1map.nii $dicoms/${sub}_${ses}/*B1MAP*/$b1
     done
 
 #CEST
-for cest in $cest_pathlist 
+	for cest in $(ls $dicoms/${sub}_${ses}/*CEST*)
     do
-    sub=$(echo "$cest" | sed -r 's_^(/[^/]*){4}/([^/]*)/.*$_\2_g')
-    ses=$(echo "$cest" | sed -r 's_^(/[^/]*){5}/([^/]*)/.*$_\2_g')   
-
-    if [ ! -f $base/${sub}_${ses}/${sub}-${ses}-B0B1CESTmap.nii ]
-    then
-    cp $cest $base/${sub}_${ses}/${sub}-${ses}-B0B1CESTmap.nii
-    fi       
+		if [ -f $base/${sub}_${ses}/${sub}-${ses}-B0B1CESTmap.nii ]
+		then
+		rm $base/${sub}_${ses}/${sub}-${ses}-B0B1CESTmap.nii
+		fi 
+		/project/bbl_projects/apps/melliott/scripts/dicom2nifti.sh -u -r Y -F $base/${sub}_${ses}/${sub}-${ses}-B0B1CESTmap.nii $dicoms/${sub}_${ses}/*CEST*/$cest  
     done
 
 
@@ -62,3 +63,5 @@ for bad_scan in 109577_8980 17622_8559 82051_10087 88760_9704 89279_9781 89367_8
         rm -rf $base/$bad_scan
         fi
     done
+done
+} | tee "$logfile"
