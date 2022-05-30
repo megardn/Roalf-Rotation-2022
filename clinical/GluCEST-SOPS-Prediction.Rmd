@@ -8,7 +8,7 @@ output: html_document
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff, GGally, atable, glmnet)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff, GGally, atable, glmnet, ppcor)
 ```
 
 
@@ -490,6 +490,11 @@ meds.coded <- read.csv("data/med_lifetime_comp.CODED.csv", header = TRUE, string
   mutate(psych.rx_life=as.factor(psych.rx_life))
 
 sops_change_meds.life <- left_join(sops_dx.sum.filt, meds.coded, by="observation")
+sops_change_meds.life <- sops_change_meds.life %>%
+  group_by(BBLID, SCANID) %>%
+  mutate(base_rx=first(psych.rx_life)) %>%
+  ungroup()
+
 n_unique(sops_change_meds.life$observation)
 #skim(sops_change_meds.life)
 ```
@@ -595,6 +600,27 @@ final.df %>%
            )
 ```
 
+Some basic demographic info on the entire sample:
+
+```{r, warning=FALSE}
+summary(final.df$age_sops)
+summary(final.df$age_scan)
+
+p.age_scan <- final.df %>%
+  ggplot() + 
+  geom_histogram(aes(x = age_scan), fill="cadetblue4") +
+  ggtitle("Age at Scan")
+
+p.age_sops <- final.df %>%
+  ggplot() + 
+  geom_histogram(aes(x = age_sops), fill="darkslateblue") +
+  ggtitle("Age at SOPS")
+
+age_plot <- ggarrange(p.age_scan, p.age_sops, common.legend = F, legend = "bottom", ncol = 2)
+annotate_figure(p=age_plot, top = text_grob("Age of Participants at Scan and Clinical Assessments", 
+                               color = "black", face = "bold", size = 14))
+```
+
 ## Between-Scanner Differences
 
 ### Baseline Demographics and Observation Counts
@@ -686,6 +712,16 @@ final.df %>%
   ggtitle("SOPS Positive Score vs Axis 1 Dx")
 ```
 
+```{r}
+t.test(sops_p ~ psych.rx_life, data = final.df)
+
+final.df %>%
+  group_by(BBLID, SCANID) %>%
+  mutate(base_rx=first(psych.rx_life)) %>%
+  t.test(sops_p ~ base_rx, data = .)
+```
+
+
 Higher SOPS P scores are predictably related to psychosis diagnosis and psychiatric medication.
 
 Look at CEST data by diagnosis and diagnostic category:
@@ -743,8 +779,16 @@ ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=base_dx)) +
 All groups appear to have relatively stable SOPS-P scores when averaged across individuals. But can CEST values predict and individual's change?
 
 ```{r}
+# ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=BBLID)) +
+#   geom_point() +
+#   xlab("Time from Scan") +
+#   ylab("SOPS Positive Score") + 
+#   ggtitle("SOPS-P Progression by for Each Subject") + 
+#   geom_smooth(method="lm",se = FALSE) +
+#   theme_bw()
+
 ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=BBLID)) +
-  geom_point() +
+  geom_line() +
   xlab("Time from Scan") +
   ylab("SOPS Positive Score") + 
   ggtitle("SOPS-P Progression by for Each Subject") + 
@@ -772,7 +816,7 @@ ggplot(data = final.df_scaled_end, mapping = aes(x = R_Thalamus_mean, y = delta_
         x ="Thalamic Glutamate Contrast", y = "Change in SOPS Positive", color="Endpoint Diagnosis")
 ```
 
-The plot is vaguely suggestive of that in Egerton et al, but clearly not as significant. However, these are scaled raw values while their plot reported "Baseline thalamic glutamate level, adjusted for baseline attenuated positive symptom score".
+The plot is vaguely suggestive of that in Egerton et al, but clearly not significant. However, these are scaled raw values while their plot reported "Baseline thalamic glutamate level, adjusted for baseline attenuated positive symptom score".
 
 # Modeling
 
@@ -850,7 +894,7 @@ ggplot(data = model2.data, mapping = aes(x = sips_diff_yrs, y = sops_p)) +
 ```
 
 
-Simple random slopes model $lmer(sops_p ~ (1 + sips_diff_yrs|BBLID), REML = T, data = final.df_scaled)$ singular with correlation of -1, because ppts with higher intercepts have more negative slopes (i.e. worse baseline sxs -> generally more improvement). Adding `base_dx` term resolves this singularity (i.e. shakes up this colinearity) by (it seems) accounting for intercept values outside of the random effect of `BBLID`.
+Simple random slopes model `lmer(sops_p ~ (1 + sips_diff_yrs|BBLID), REML = T, data = final.df_scaled)` singular with correlation of -1, because ppts with higher intercepts have more negative slopes (i.e. worse baseline sxs -> generally more improvement). Adding `base_dx` term resolves this singularity (i.e. shakes up this colinearity) by (it seems) accounting for intercept values outside of the random effect of `BBLID`.
 
 Adding standard demographics (sex and age at scan)
 
@@ -918,8 +962,8 @@ Switching out baseline sops positive (`base_sops_p`) for `base_dx` results in a 
 
 ```{r}
 lmer.6 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
-summary(lmer.6)
-Anova(lmer.6)
+# summary(lmer.6)
+# Anova(lmer.6)
 ```
 
 Finally, I'll fit a full model without CEST data for comparison.
@@ -930,20 +974,24 @@ summary(lmer.7)
 Anova(lmer.7)
 ```
 
-Using anova to compare model fit on chi-sq:
+Using anova to compare nested model fits:
 
 ```{r}
-anova(lmer.2, lmer.3, lmer.4)
+anova(lmer.4, lmer.5, test="Chisq")
+
+anova(lmer.5, lmer.7, test="Chisq")
 ```
+
+`lmer.5` (adding `psych.rx_life`) unsurprisingly significantly improved the fit significantly. There was no significant difference between `lmer.5` and `lmer.7`, suggesting that adding thalamic CEST values do not improve the model. 
 
 "The residual variance estimate can be thought of as the within groups variance and each random effect variance estimate can be thought of as a between groups estimate"
 
 Diagnostics
 ```{r}
 #linearity - plotting residuals
-plot(lmer.4)
+plot(lmer.5)
 #normality - plotting quantiles
-qqnorm(residuals(lmer.4))
+qqnorm(residuals(lmer.5))
 ```
 
 Heteroscedastic - model fits less well at higher (and more important) sops_p scores
@@ -951,7 +999,7 @@ Heteroscedastic - model fits less well at higher (and more important) sops_p sco
 nonrandom slopes on endpoint data - 
 
 ```{r}
-lmer.end <- lmer(sops_p ~ sips_diff_days*R_Thalamus_mean + R_Thalamus_numvoxels + age_sops + scanner + Sex_1M + base_sops_p + psych.rx_life + (1|BBLID), REML = T, data = final.df_scaled_end)
+lmer.end <-lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_dx + psych.rx_life + (1|BBLID), REML = T, data = final.end_scaled)
 
 summary(lmer.end)
 Anova(lmer.end)
@@ -960,7 +1008,7 @@ Anova(lmer.end)
 nonrandom slopes on change
 
 ```{r}
-lmer.change <- lmer(delta_sops ~ sips_diff_days + R_Thalamus_mean + R_Thalamus_numvoxels + age_sops + scanner + Sex_1M + base_sops_p + psych.rx_life + (1|BBLID), REML = T, data = final.df_scaled_end)
+lmer.change <- lmer(delta_sops ~ sips_diff_days + R_Thalamus_mean + age_sops + scanner + Sex_1M + base_sops_p + base_rx + (1|BBLID), REML = T, data = final.end_scaled)
 
 summary(lmer.change)
 Anova(lmer.change)
@@ -977,7 +1025,7 @@ final.end_scaled <- final.end_scaled %>%
 #check if binarized correctly
 #table(final.df_scaled_end$sops_cat, final.df_scaled_end$sops_worse)
 
-fit.logit <- glmer(sops_worse ~ sips_diff_days + age_scan + Sex_1M + base_sops_p + (1|BBLID), final.end_scaled, family=binomial(logit))
+fit.thal <- lmer(R_Thalamus_mean ~ scanner + sops_worse + (1|BBLID), final.end_scaled)
 summary(fit.logit)
 Anova(fit.logit)
 summary(rePCA(fit.logit))
@@ -1003,7 +1051,50 @@ fit.logit.predict <- predict(fit.logit, final.end_scaled, type="response")
 #   theme(legend.position = "right")
 ```
 
+## Progressors vs Remitters
+
+Classifying each subject as progression vs remission based on whether trajectory from baseline to final endpoint SOPS-P is + or -, looking for between-group CEST differences (similar to Allen et al Fig 3A & binary logistic regression run in Egerton).
+
+```{r}
+#first subset df to final tp for each subject
+end.df <- final.df %>%
+  group_by(BBLID) %>%
+  slice_tail() %>%
+  ungroup() %>%
+  mutate(sops_worse = case_when(sops_cat == "remit" ~ 0,
+                                sops_cat == "stable" ~ 0,
+                                sops_cat == "progress" ~ 1))
+
+table(end.df$sops_worse) #pretty even split
+fit.stat <- glm(sops_worse ~ R_Thalamus_mean + scanner, data=end.df, family=binomial(logit))
+Anova(fit.stat)
+
+#confirm that these results don't change when removing controls
+end.df.pts <- end.df %>%
+  filter(base_dx!= "none")
+fit.stat.pt <- glm(sops_worse ~ R_Thalamus_mean + scanner, data=end.df.pts, family=binomial(logit))
+Anova(fit.stat.pt)
+```
+
+Thalamic glutamate levels do not differ between remitters and progressors in our sample, whether or not controls are included in the sample.
+
+Running partial correlations (as in Egerton et al) on baseline glutamate vs SOPS P ("Relationships between baseline glutamate concentrations and absolute change in attenuated psychotic symptoms or GAF score over time were calculated using partial correlation  coefficients,  co-varying  for  baselines cores to control for regression to the mean")
+
+```{r}
+pcor.df <- end.df %>%
+  mutate(scan.num = case_when(scanner == "Terra" ~ 0,
+                                scanner == "ONM" ~ 1)) %>% #must be numeric for pcor
+  dplyr::select("base_sops_p", "sops_p", "sips_diff_days", "R_Thalamus_mean", "scan.num")
+
+pcor(pcor.df, method="pearson")
+```
+
+No significant association of thalamic glutamate with final SOPS-P scores is found when controlling for baseline SOPS, time to endpoint, and scanner.
+
 # Appendix
+
+## References
++
 
 ## MEM Resources
 + UCLA [INTRODUCTION TO LINEAR MIXED MODELS](https://stats.oarc.ucla.edu/other/mult-pkg/introduction-to-linear-mixed-models/)
@@ -1017,7 +1108,7 @@ fit.logit.predict <- predict(fit.logit, final.end_scaled, type="response")
 + random effects [correlation outputs](https://stats.stackexchange.com/questions/320978/understanding-and-coding-random-intercept-correlation-lmer)
 + random effects correlation, [specifically singularity when modeling a subject ID intercept and time slope](https://stat.ethz.ch/pipermail/r-help//2009-November/412590.html)
 
-```{r}
+```{r, eval=FALSE}
 tim=rep(10:19,10)
 id=rep(1:10,each=10)
 rand.int=rep(rnorm(10,0,1),each=10)
