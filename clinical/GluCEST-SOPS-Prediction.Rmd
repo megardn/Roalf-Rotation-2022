@@ -4,6 +4,7 @@ output: html_document
 ---
 
 ```{r Install/Load packages, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 #load packages
 if(!require('pacman')) {
   install.packages('pacman')
@@ -652,11 +653,13 @@ demo.base <- atable(final.base,
          target_cols=c("sex", "age_scan", "Race", "Ethnicity", "base_dx", "TYPE", "base_sops_p", "base_gafc", "psych.rx_life"),
          group_col="scanner",
          format_to="HTML")
+demo.base
 
 tpt.table <- atable(final.df,
                     target_cols=c("scan.time", "age_sops", "sips_diff_yrs", "diagnosis", "sops_p", "sops_n", "sops_d", "sops_g", "GAF_C", "psych.rx_life"),
                     group_col="scanner",
                     format_to="HTML")
+tpt.table
 ```
 
 ### CEST Values
@@ -1098,7 +1101,6 @@ ggplot(data = reg2b.data, mapping = aes(x = tim, y = y2)) +
 
 reg3=lmer(y3~tim+(tim|id))
 summary(reg3)
-
 ```
 
 ## Mixed Effects Models - Baseline Included
@@ -1420,7 +1422,7 @@ currentmeds <- right_join(scan.meds.current_wide.filt, end.meds.current_wide.fil
 
 Actually very narrow range of meds here, but the `empty entry` notes indicate either no medications or no new medications. Therefore I'll need to look back at participant's former meds
 
-#Wide Data
+# Wide Data
 
 ## Operationalizing Change
 
