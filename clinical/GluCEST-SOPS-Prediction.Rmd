@@ -8,7 +8,7 @@ output: html_document
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff, GGally, atable, glmnet, ppcor)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff, GGally, atable, glmnet, ppcor, plot3D, plot3Drgl)
 ```
 
 
@@ -37,7 +37,7 @@ glu_old <- glu_old %>%
   ONM.7T_date = as.Date(ONM_7T_date,format ="%m/%d/%y"),
   ONM.SCANID=as.character(ONM_SCANID)) %>%
   rename(Terra.SCANID=Terra_SCANID) %>%
-  select(-X7T_date, -ONM_7T_date, -ONM_SCANID)
+ dplyr::select(-X7T_date, -ONM_7T_date, -ONM_SCANID)
 
 # make long
 glu_old.long <- glu_old %>% pivot_longer(2:5, names_sep = '[.]', names_to=c("scanner", ".value")) %>%
@@ -55,7 +55,7 @@ glu_ar <- glu_ar %>%
   mutate(BBLID=as.character(BBLID),
          base_7t = as.Date(base_7t,format ="%m/%d/%y"),
          follow_7t = as.Date(follow_7t,format ="%m/%d/%y")) %>%
-  select(-baseline_clinical)
+ dplyr::select(-baseline_clinical)
 
 # make long
 glu_ar.long <- gather(glu_ar, scanner, "7T_date", base_7t:follow_7t, factor_key=TRUE) %>%
@@ -117,13 +117,13 @@ Load diagnosis data from oracle ID and remove 22q subj
 ```{r}
 #load diagnosis data
 redcap <- read.csv("data/oracle_diagnoses_all.csv", header = TRUE, stringsAsFactors = F, na = c("", "null", "..", ".")) %>% 
-  select(BBLID, DODIAGNOSIS, HSTATUS, AGEONSET_CLINICRISK | contains("AXIS1_")) %>% #get manageable subset of data
+ dplyr::select(BBLID, DODIAGNOSIS, HSTATUS, AGEONSET_CLINICRISK | contains("AXIS1_")) %>% #get manageable subset of data
   mutate(DODIAGNOSIS = as.Date(DODIAGNOSIS),
          BBLID=as.factor(BBLID))
 
 
 #make list of 22q subj
-q22 <- subset(redcap, HSTATUS == "22q", select = BBLID) %>% unique()
+q22 <- subset(redcap, HSTATUS == "22q",select = BBLID) %>% unique()
 
 #remove 22q participants from scan list, that way it'll apply to all subsequent merges w/ clinical data
 all_7t.wide <- all_7t.wide %>% subset(!(BBLID %in% q22$BBLID)) %>% as.data.frame()#drop 22q sub
@@ -166,19 +166,19 @@ length(unique(sips_filt$BBLID))
 Some subjects have multiple assessments on one day (one from proband one from family, etc); need to be sure to pick only `TYPE == "COMBINED"` per discussion with David. If no combined, pick proband.
 
 ```{r}
-#if subj has more than one assessment for same day, select Combined 
+#if subj has more than one assessment for same day,dplyr::select Combined 
 sips_filt<- sips_filt %>% mutate(TYPE = as.factor(TYPE))
 levels(sips_filt$TYPE) 
 sips_filt$TYPE <- fct_collapse(sips_filt$TYPE, "Proband" = c("Proband", "proband", "P", "FP", "IP"), "Combined"=c("Combined", "FPC")) #combine all proband
 sips_filt$TYPE <- factor(sips_filt$TYPE, levels = c("Combined", "Proband", "Collateral"))
 
-#group data to select correct type (defined as lowest ordered level) - also cleaning up
+#group data todplyr::select correct type (defined as lowest ordered level) - also cleaning up
 sips_filt2 <- sips_filt %>%
   group_by(BBLID, DOSIPS) %>%
   arrange(TYPE) %>%
   slice(c(1)) %>%
   ungroup() %>%
-  select(-SIPS_SOURCEID, -SOURCE_PROJECT) %>%
+ dplyr::select(-SIPS_SOURCEID, -SOURCE_PROJECT) %>%
   mutate(DOSIPS=as.Date(DOSIPS))
 
 length(unique(sips_filt2$BBLID)) #confirm no subjects deleted
@@ -197,7 +197,7 @@ sips_scored<- sips_filt2 %>% mutate(sops_p = rowSums(across(plist), na.rm=F),
 
 #also dropping `3456` cols (and maybe GAF_PCTCHG?) since they don't seem to mean anything or be useful and it would be better to recalculate them anyway
 #aksi dropping rater
-sips_scored <- sips_scored %>% select(-VISITNUM, -RATER, -REVIEW, -POS_345, -POS_6, - NEG_3456, -DIS_3456, - GEN_3456) %>% as.data.frame()
+sips_scored <- sips_scored %>%dplyr::select(-VISITNUM, -RATER, -REVIEW, -POS_345, -POS_6, - NEG_3456, -DIS_3456, - GEN_3456) %>% as.data.frame()
 
 head(sips_scored)
 ```
@@ -226,7 +226,7 @@ sips_scan_long.lab <- sips_scan_long %>%
   mutate(row = row_number()) %>%
   filter(!(scan.time=="base" & row > 1)) %>% #if subject has more than one baseline SOPS, just get closest to scan
   ungroup() %>%
-  select(-row)
+ dplyr::select(-row)
 
 table(as.factor(sips_scan_long.lab$scan.time))
 n_unique(sips_scan_long.lab$BBLID)
@@ -242,7 +242,7 @@ scanlist_clean <- sips_scan_long.lab %>%
          scan.time=paste(scan.time,as.character(row), sep="."), #number endpoints if subj has more than one
          observation = paste(as.character(BBLID), as.character(date7t), scan.time)) %>% #add indicator for observation
   ungroup() %>%
-  select(-row)
+ dplyr::select(-row)
 
 table(as.factor(scanlist_clean$scan.time))
 n_unique(scanlist_clean$BBLID)
@@ -263,7 +263,7 @@ demo.phi <- read.csv("data/7t_demographics.csv", header = TRUE, stringsAsFactors
          Ethnicity = as.factor(Ethnicity),
          DOB = as.Date(DOB, format = "%m/%d/%y"),
          BBLID = as.factor(BBLID)) %>%
-  select(-Diagnostic_Group, -sex, -Age)
+ dplyr::select(-Diagnostic_Group, -sex, -Age)
 
 sops_demo.phi <- left_join(scanlist_clean, demo.phi, by="BBLID")
 #skim(sops_demo.phi)
@@ -278,7 +278,7 @@ Using DOB to calculate age at scan and at endpoint SOPS, then removing.
 sops_demo <- sops_demo.phi %>%
   mutate(age_scan = as.numeric(difftime(date7t,DOB, units = "weeks"))/52.25,
          age_sops = as.numeric(difftime(DOSIPS,DOB, units = "weeks"))/52.25) %>%
-  select(-DOB)
+ dplyr::select(-DOB)
 
 summary(sops_demo$age_scan)
 summary(sops_demo$age_sops)
@@ -290,7 +290,7 @@ Now merge in diagnosis and filter to smallest datediff
 
 ```{r}
 #get just dates/matching info for observations
-just_scans <- sops_demo %>% select(BBLID, observation, DOSIPS, date7t, scan.time)
+just_scans <- sops_demo %>%dplyr::select(BBLID, observation, DOSIPS, date7t, scan.time)
 
 sops_dx <- left_join(just_scans, redcap, by="BBLID")
 any(is.na(sops_dx$AXIS1_DX1)) #no primary dx missing
@@ -303,7 +303,7 @@ sops_dx.filt <- sops_dx %>%
   slice_head() %>% #keep only closest dx
   ungroup() %>%
   filter(abs(dx_sops_diff) <= 100) %>% #restrict to w/in 100 days
-  select_if(~!all(is.na(.)))
+ dplyr::select_if(~!all(is.na(.)))
 
 sops_dx.filt %>% 
   ggplot(aes(x=dx_sops_diff, fill=scan.time)) + geom_bar() + facet_grid(cols = vars(scan.time))
@@ -324,7 +324,7 @@ Now merge back in
 ```{r}
 #drop stuff that's already there before merging
 sops_dx.filt <- sops_dx.filt %>%
-  select(-BBLID, -DOSIPS, -date7t, -scan.time)
+ dplyr::select(-BBLID, -DOSIPS, -date7t, -scan.time)
 
 sops_dx.final <- left_join(sops_demo, sops_dx.filt, by="observation")
 #skim(sops_dx.final)
@@ -334,7 +334,7 @@ n_unique(sops_dx.final$observation)
 First I'll make an indicator for psychosis/prodrome at baseline or endpoint (since `HSTATUS` cols aren't really great).
 
 ```{r}
-sops_dx.final %>% select(contains("AXIS1_DX")) %>% 
+sops_dx.final %>%dplyr::select(contains("AXIS1_DX")) %>% 
   t %>% c %>% unique
 control.list <- c("V71.09B")
 pro.list<- c("348.4", "348.43", "348.62", "348.42", "348.12", "348.41", "348.11")
@@ -375,7 +375,7 @@ And drop all the extra dx columns we don't need
 
 ```{r}
 sops_dx.sum.filt <- sops_dx.sum %>%
-  select(!contains("AXIS1") & !contains("HSTATUS") & !contains("CONSIDER") & !contains("PRODROMAL") & !contains("POSS_PRO_DX"))
+ dplyr::select(!contains("AXIS1") & !contains("HSTATUS") & !contains("CONSIDER") & !contains("PRODROMAL") & !contains("POSS_PRO_DX"))
 ```
 
 
@@ -399,13 +399,13 @@ meds <- meds %>%
 hist(meds$count)
 
 medswide <- meds %>%
-  select(BBLID, DOCOLLECT, ID, count, MEDICINE, NOTES, IS_CURRENT) %>%
+ dplyr::select(BBLID, DOCOLLECT, ID, count, MEDICINE, NOTES, IS_CURRENT) %>%
   mutate(BBLID=as.factor(BBLID)) %>%
   pivot_wider(., names_from = count, values_from=c(MEDICINE, NOTES, IS_CURRENT)) # pivot
 
 #get subset
 meds_reduced <- meds %>%
-  select(BBLID, DOCOLLECT, MED_COLLECT, NOTES, MEDICINE, PHARMCLASS, DOMED_START, DOMED_END, IS_CURRENT)
+ dplyr::select(BBLID, DOCOLLECT, MED_COLLECT, NOTES, MEDICINE, PHARMCLASS, DOMED_START, DOMED_END, IS_CURRENT)
 ```
 
 Trying to add PNC data to see if that will help get more baseline info
@@ -413,12 +413,12 @@ Trying to add PNC data to see if that will help get more baseline info
 ```{r}
 pnc.meds <- read.csv("data/n1601_health_with_meds_20170421.csv", header = TRUE, stringsAsFactors = F, na ="") %>%
   mutate(BBLID=as.factor(bblid)) %>%
-  select(-bblid)
+ dplyr::select(-bblid)
 skim(pnc.meds)
 
 #get managable subset of scan list
 scan_dates <- sops_dx.sum.filt %>%
-  select(BBLID, date7t, observation) %>%
+ dplyr::select(BBLID, date7t, observation) %>%
   distinct()
 
 pnc.meds_scan_date <- inner_join(scan_dates, pnc.meds, by="BBLID") %>%
@@ -451,12 +451,12 @@ med_lifetime_dist <- med_lifetime %>%
   distinct(MEDICINE, .keep_all = T) %>% #keep distinct
   mutate(count=row_number()) %>% #update counts so i can pivot after
   ungroup() %>%
-  select(BBLID, DOSIPS, observation, MEDICINE, NOTES, count)
+ dplyr::select(BBLID, DOSIPS, observation, MEDICINE, NOTES, count)
 table(med_lifetime_dist$MEDICINE)
 
 #pivot
 med_lifetime_dist.wide <- pivot_wider(med_lifetime_dist, id_cols=observation, names_from = count, values_from=c(MEDICINE, NOTES)) %>% # pivot
-  select_if(~!all(is.na(.))) #drop any col that's totally empty
+ dplyr::select_if(~!all(is.na(.))) #drop any col that's totally empty
 n_unique(med_lifetime_dist.wide$observation)
 n_unique(med_lifetime_dist$BBLID)
 ```
@@ -467,7 +467,7 @@ Integrate PNC meds:
 
 ```{r}
 pnc.meds.only <- pnc.meds_scan_date %>%
-  select(observation, 22:32)
+ dplyr::select(observation, 22:32)
 pnc.meds.only$med1[is.na(pnc.meds.only$med1)] <- "empty entry"
 
 med_lifetime_comp <- full_join(med_lifetime_dist.wide, pnc.meds.only, by="observation")
@@ -486,7 +486,7 @@ Read back in and merge coded lifetime meds:
 
 ```{r}
 meds.coded <- read.csv("data/med_lifetime_comp.CODED.csv", header = TRUE, stringsAsFactors = F, na="") %>%
-  select(observation, psych.rx_life) %>%
+ dplyr::select(observation, psych.rx_life) %>%
   mutate(psych.rx_life=as.factor(psych.rx_life))
 
 sops_change_meds.life <- left_join(sops_dx.sum.filt, meds.coded, by="observation")
@@ -510,18 +510,18 @@ skim(cest.rois)
 
 #clean up a bit
 cest.vals <- cest.rois %>%
-  select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
+ dplyr::select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
   mutate(scanid = str_split(as.character(Subject), "/", simplify = T)[, 6]) %>% #get BBLID_scanID 
-  select(-Subject)
+ dplyr::select(-Subject)
 
 #GM voxels
 cest.gm.rois <- read.csv("data/GM-HarvardOxford-Subcortical-Measures.csv", header = TRUE, stringsAsFactors = F, sep = '\t', na="NaN")
 
 #clean up a bit
 gm.vals <- cest.gm.rois %>%
-  select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
+ dplyr::select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
   mutate(scanid = str_split(as.character(Subject), "/", simplify = T)[, 6]) %>% #get BBLID_scanID 
-  select(-Subject) %>%
+ dplyr::select(-Subject) %>%
   rename_with(.cols = 1:(ncol(.)-1), function(x){paste0("gm.", x)}) #add prefix
 ```
 
@@ -530,13 +530,13 @@ ALL SCANS HAVE RIGHT THALAMUS DATA!
 one subject also weirdly has GM values in `L_CerebralWM_mean`, outputting scan ID so I can look at the niftis
 
 ```{r}
-gm.vals %>% filter(!is.na(gm.L_CerebralWM_numvoxels)) %>% select(scanid, gm.L_CerebralWM_numvoxels)
+gm.vals %>% filter(!is.na(gm.L_CerebralWM_numvoxels)) %>%dplyr::select(scanid, gm.L_CerebralWM_numvoxels)
 ```
 
 Looks like slab was placed across the midline, seeing if other scans have comparable gm voxels in `R_CerebralWM_mean` as comparison.
 
 ```{r}
-gm.vals %>% filter(!is.na(gm.R_CerebralWM_numvoxels)) %>% select(scanid, gm.R_CerebralWM_numvoxels)
+gm.vals %>% filter(!is.na(gm.R_CerebralWM_numvoxels)) %>%dplyr::select(scanid, gm.R_CerebralWM_numvoxels)
 ```
 
 Seems like having errant GM voxels (calculated probablistically via FAST) isn't uncommon in WM (as defined by HO Subcortical atlas), what makes 94276_10927 unique is slab orientation. 
@@ -549,10 +549,10 @@ all.cest <- merge(cest.vals, gm.vals, by="scanid") %>%
 
 sum(duplicated(all.cest$BBLID)) #no duplicate subjects remain
 
-r.thal.dat <- all.cest %>% select("scanid" | contains("R_Thalamus"))
+r.thal.dat <- all.cest %>%dplyr::select("scanid" | contains("R_Thalamus"))
 skim(r.thal.dat)
 
-r.thal.dat %>% select(-scanid) %>% ggpairs()
+r.thal.dat %>%dplyr::select(-scanid) %>% ggpairs()
 
 #check for correlation of thalamic volume captured and avg. CEST
 cor.test(r.thal.dat$R_Thalamus_mean, r.thal.dat$R_Thalamus_numvoxels, method=c("pearson"))
@@ -577,8 +577,11 @@ final.df_scaled <- final.df %>% mutate_if(is.numeric, scale)
 final.base <- final.df %>% filter(scan.time=="base.1") %>%
   mutate(sex=recode_factor(Sex_1M, `1`="Male", `2`="Female"))
 
+#followups only 
+final.end <- final.df %>% filter(scan.time != "base.1")
+
 #followups only - scaled
-final.end_scaled <- final.df %>% filter(scan.time != "base.1") %>% mutate_if(is.numeric, scale)
+final.end_scaled <- final.end %>% mutate_if(is.numeric, scale)
 ```
 
 # EDA
@@ -589,7 +592,7 @@ Plotting correlations
 skim(final.df)
 
 final.df %>% 
-  select_if(is.numeric) %>%
+ dplyr::select_if(is.numeric) %>%
   cor(., use = "pairwise.complete.obs") %>%
   corrplot(method = "color", 
            type = "upper",
@@ -621,6 +624,21 @@ annotate_figure(p=age_plot, top = text_grob("Age of Participants at Scan and Cli
                                color = "black", face = "bold", size = 14))
 ```
 
+Visualize spread of followup timepoints for possible future binning:
+
+```{r}
+final.end %>%
+  ggplot() + 
+  geom_histogram(aes(x = sips_diff_days), fill="darkseagreen4", color="white", bins=10) +
+  ggtitle("Time to Clinical Follow-Up")
+
+#10 looks like good # of bins
+final.bin_scaled <- final.end %>%
+  mutate(sips_diff_bin=ntile(sips_diff_days, n=10)) %>%
+  mutate_if(is.numeric, scale)
+```
+
+
 ## Between-Scanner Differences
 
 ### Baseline Demographics and Observation Counts
@@ -648,7 +666,7 @@ tpt.table <- atable(final.df,
 Compare Thalamic CEST data by scanner:
 
 ```{r}
-final.df %>% select(scanner | contains("Thalamus")) %>% ggpairs(aes(color=scanner))
+final.df %>%dplyr::select(scanner | contains("Thalamus")) %>% ggpairs(aes(color=scanner))
 
 cest.table <- atable(final.base,
        target_cols=c("R_Thalamus_mean", "R_Thalamus_numvoxels", "gm.R_Thalamus_mean", "gm.R_Thalamus_numvoxels"),
@@ -662,25 +680,24 @@ Are CEST values or demographics significantly different between scanners?
 
 ```{r}
 #check for differences in baseline diagnoses
-chisq.test(final.df$scanner, final.df$base_dx, simulate.p.value=TRUE)
+chisq.test(final.base$scanner, final.base$base_dx, simulate.p.value=TRUE)
 #check for differences in scan age
-chisq.test(final.df$scanner, final.df$age_scan, simulate.p.value=TRUE)
+chisq.test(final.base$scanner, final.base$age_scan, simulate.p.value=TRUE)
 #check for differences in baseline SOPS Positive
-final.df %>% filter(scan.time=="base.1")%>%
-  t.test(sops_p ~ scanner, data=.)
+t.test(base_sops_p ~ scanner, data=final.base)
 
 #check for differences in thalamic CEST
-t.test(R_Thalamus_mean ~ scanner, data = final.df)
+t.test(R_Thalamus_mean ~ scanner, data = final.base)
 #check for differences in thalamic volume captured
-t.test(R_Thalamus_numvoxels ~ scanner, data = final.df)
+t.test(R_Thalamus_numvoxels ~ scanner, data = final.base)
 
 #look for correlations between volume and CEST when controlling for scan
-m.cest.vol <- lm(R_Thalamus_mean ~ scanner + R_Thalamus_numvoxels, data=final.df)
+m.cest.vol <- lm(R_Thalamus_mean ~ scanner + R_Thalamus_numvoxels, data=final.base)
 summary(m.cest.vol)
 Anova(m.cest.vol)
 ```
 
-Scanner is *not significantly* related to baseline diagnosis or baseline SOPS positive score but *is significantly* related to CEST contrast (averaged over thalamus), number of thalamic volumes captured, and age at scan. After controlling for scanner, number of voxels *is not* significantly associated with mean CEST value in the thalamus, therefore scanner (but not volume) will be controlled for in the final model.
+Scanner is *not significantly* related to baseline diagnosis, baseline SOPS positive score, or age at scan but *is significantly* related to CEST contrast (averaged over thalamus) and number of thalamic volumes captured. After controlling for scanner, number of voxels *is not* significantly associated with mean CEST value in the thalamus, therefore scanner (but not volume) will be controlled for in the final model.
 
 ## Clinical Values
 
@@ -696,7 +713,7 @@ ggplot(final.df) +
 
 # final.df %>% 
 #   group_by(BBLID) %>%
-#   sample_n(1) %>% #random selection
+#   sample_n(1) %>% #randomdplyr::selection
 #   ggplot(aes(x = diagnosis, y = GAF_C)) +
 #   geom_point(aes(color=psych.rx_life), show.legend = TRUE) +
 #   geom_jitter(width = 0.25) +
@@ -728,18 +745,13 @@ Look at CEST data by diagnosis and diagnostic category:
 
 ```{r}
 #plots
-final.df %>% select(base_dx | contains("Thalamus")) %>% 
+final.base %>% dplyr::select(base_dx | contains("Thalamus")) %>% 
   filter(base_dx != "other") %>% #too few other dx, need to remove
 ggpairs(aes(color=base_dx)) +
   ggtitle("Thalamic Cest Values by Baseline Diagnosis")
 
-final.df %>% 
-  group_by(BBLID) %>%
-  arrange(DOSIPS) %>% #get first timepoint for baseline dx
-  slice_head() %>% #get first timepoint for baseline dx
-  ungroup() %>%
-  select(dx_control | contains("Thalamus")) %>% 
-  distinct() %>% 
+final.base %>%
+ dplyr::select(dx_control | contains("Thalamus")) %>% 
   mutate(dx_control=recode_factor(as.factor(dx_control), 'TRUE'="Control", 'FALSE'="Patient")) %>%
   ggpairs(aes(color=dx_control)) +
   ggtitle("Thalamic Cest Values: Patients vs Controls")
@@ -750,7 +762,7 @@ summary(lm.dx)
 Anova(lm.dx)
 ```
 
-Overall, baseline diagnosis does not appear to be signficantly associated with thalamic cest when controlling for sex, age and scanner type, while scanner type does remain predictive.
+Overall, baseline diagnosis does not appear to be significantly associated with thalamic cest when controlling for sex, age and scanner type, while scanner type does remain predictive.
 
 Looking at baseline diagnosis vs GAF
 
@@ -798,17 +810,18 @@ ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=BBLID)) +
 
 ```{r}
 #plot of change by dx
-final.df_scaled_end %>%
+final.end_scaled %>%
   ggplot() + 
   geom_histogram(aes(x = delta_sops, fill=base_dx, color=base_dx), position="dodge", alpha=0.5) +
   ggtitle("Change in SOPS Positive Score by Baseline Diagnosis")
 ```
+
 Plot change in sops positive by glutamate (similar to egerton et al fig 2)
 
 ```{r}
-final.df_scaled_end %>%
+final.end_scaled %>%
   filter(base_dx=="pro"| base_dx=="psych")
-ggplot(data = final.df_scaled_end, mapping = aes(x = R_Thalamus_mean, y = delta_sops)) +
+ggplot(data = final.end_scaled, mapping = aes(x = R_Thalamus_mean, y = delta_sops)) +
   geom_point(na.rm = T, aes(col = diagnosis)) +
   geom_smooth(method = "lm", na.rm=T, col = "black", se=T) +
   theme(legend.position = "right") +
@@ -831,6 +844,7 @@ ggplot(data = final.df, mapping = aes(x = sips_diff_days, y = sops_p)) +
 At the population level, SOPS Positive scores remained stable over time.
 
 Lm to look for any interactions of thalamic CEST and diagnosis:
+
 ```{r}
 lm.int <- lm(sops_p ~ R_Thalamus_mean*base_dx, data=final.df)
 Anova(lm.int)
@@ -844,22 +858,22 @@ Anova(lm.int3)
 
 No evidence of meaningful interactions that should be included in the final model. 
 
-## Mixed Effects Models
+## Mixed Effects Models of SOPS P Change
 
-Using scaled data so model will converge more readily. Building models with predictors chosen based on a priori subject knowledge and relationships shown above, getting sequentially more complex to avoid overfitting.
+Using scaled data so model will converge more readily. No need for random slopes, since each subject's `delta_sops` allows for varying clinical trajectories all on their own. Slope in this case will be analogous to the relationship between cest and improvement, which we hope will be the same/generalizable across subjects, rather than between cest and scores.
 
 ```{r}
-lmer.1 <- lmer(sops_p ~ sips_diff_days + (1|BBLID), REML = T, data = final.df_scaled)
-summary(lmer.1)
+fit.delta.1 <- lmer(delta_sops ~ sips_diff_days + (1|BBLID), REML = T, data = final.end_scaled )
+summary(fit.delta.1)
 
 #plot
-model_coefs <- coef(lmer.1)$BBLID %>% 
+delta1_coefs <- coef(fit.delta.1)$BBLID %>% 
   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
   rownames_to_column("BBLID")
 
-model1.data <- left_join(final.df_scaled, model_coefs, by="BBLID")
+model.end.1.data <- left_join(final.end_scaled, delta1_coefs, by="BBLID")
 
-ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
+ggplot(data = model.end.1.data, mapping = aes(x = sips_diff_days, y = delta_sops)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
   geom_abline(aes(intercept = Intercept, 
                   slope = Slope,
@@ -870,73 +884,70 @@ ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
   theme(legend.position = "right")
 ```
 
+Adding baseline SOPS P to model
 
 ```{r}
-lmer.2 <- lmer(sops_p ~ base_dx + (1 + sips_diff_yrs|BBLID), REML = T, data = final.df_scaled )
-summary(lmer.2)
+fit.delta.2 <- lmer(delta_sops ~ sips_diff_days + base_sops_p + (1|BBLID), REML = T, data = final.end_scaled)
+summary(fit.delta.2)
 
-#plot
-model_coefs2 <- coef(lmer.2)$BBLID %>% 
-  rename(Intercept = `(Intercept)`, Slope = sips_diff_yrs) %>% 
-  rownames_to_column("BBLID")
-model2.data <- left_join(final.df_scaled, model_coefs2, by="BBLID")
-
-ggplot(data = model2.data, mapping = aes(x = sips_diff_yrs, y = sops_p)) +
-  geom_point(na.rm = T, aes(col = BBLID)) +
-  geom_abline(aes(intercept = Intercept, 
-                  slope = Slope,
-                  colour = BBLID
-                  ),
-              size = 0.5
-              ) +
-  theme(legend.position = "right") +
-  ggtitle("Model on Scaled Numeric Data")
+# #plot
+# delta2_coefs <- coef(fit.delta.2)$BBLID %>% 
+#   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+#   rownames_to_column("BBLID")
+# 
+# model.end.2.data <- left_join(final.bin_scaled, delta2_coefs, by="BBLID")
+# 
+# ggplot(data = model.end.2.data, mapping = aes(x = sips_diff_days, y = delta_sops)) +
+#   geom_point(na.rm = T, aes(col = BBLID)) +
+#   geom_abline(aes(intercept = Intercept, 
+#                   slope = Slope,
+#                   colour = BBLID
+#                   ),
+#               size = 0.5
+#               ) +
+#   theme(legend.position = "right")
 ```
 
-
-Simple random slopes model `lmer(sops_p ~ (1 + sips_diff_yrs|BBLID), REML = T, data = final.df_scaled)` singular with correlation of -1, because ppts with higher intercepts have more negative slopes (i.e. worse baseline sxs -> generally more improvement). Adding `base_dx` term resolves this singularity (i.e. shakes up this colinearity) by (it seems) accounting for intercept values outside of the random effect of `BBLID`.
-
-Adding standard demographics (sex and age at scan)
+Adding demographics
 
 ```{r}
-lmer.3 <- lmer(sops_p ~ Sex_1M + age_scan + base_dx + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
-summary(lmer.3)
-#Anova(lmer.3)
+fit.delta.3 <- lmer(delta_sops ~ Sex_1M + age_scan + base_sops_p + sips_diff_days + (1 |BBLID), REML = T, data = final.end_scaled)
+summary(fit.delta.3)
+#Anova(fit.delta.3)
 
-#plot
-
-model_coefs3 <- coef(lmer.3)$BBLID %>% 
-  rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
-  rownames_to_column("BBLID")
-
-model3.data <- left_join(final.df_scaled, model_coefs3, by="BBLID")
-
-ggplot(data = model3.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
-  geom_point(na.rm = T, aes(col = BBLID)) +
-  geom_abline(aes(intercept = Intercept, 
-                  slope = Slope,
-                  colour = BBLID
-                  ),
-              size = 0.5
-              ) +
-  theme(legend.position = "right") +
-  ggtitle("Model on Scaled Numeric Data")
+# #plot
+# delta3_coefs <- coef(fit.delta.3)$BBLID %>% 
+#   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+#   rownames_to_column("BBLID")
+# 
+# model.end.3.data <- left_join(final.bin_scaled, delta3_coefs, by="BBLID")
+# 
+# ggplot(data = model.end.3.data, mapping = aes(x = sips_diff_days, y = delta_sops)) +
+#   geom_point(na.rm = T, aes(col = BBLID)) +
+#   geom_abline(aes(intercept = Intercept, 
+#                   slope = Slope,
+#                   colour = BBLID
+#                   ),
+#               size = 0.5
+#               ) +
+#   theme(legend.position = "right")
 ```
 
 Adding in CEST values along with scanner, since Thalamic glucest contrast varies significantly between scanner.
 
 ```{r}
-lmer.4 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_dx + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
-summary(lmer.4)
-Anova(lmer.4)
-
+fit.delta.4 <- lmer(delta_sops ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p + sips_diff_days + (1 |BBLID), REML = T, data = final.end_scaled )
+summary(fit.delta.4)
+#Anova(fit.delta.4)
 
 #plot
-model_coefs4 <- coef(lmer.4)$BBLID %>% 
+delta4_coefs <- coef(fit.delta.4)$BBLID %>% 
   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
   rownames_to_column("BBLID")
-model4.data <- left_join(final.df_scaled, model_coefs4, by="BBLID")
-ggplot(data = model4.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
+
+model.end.4.data <- left_join(final.end_scaled, delta4_coefs, by="BBLID")
+
+ggplot(data = model.end.4.data, mapping = aes(x = sips_diff_days, y = delta_sops)) +
   geom_point(na.rm = T, aes(col = BBLID)) +
   geom_abline(aes(intercept = Intercept, 
                   slope = Slope,
@@ -944,57 +955,73 @@ ggplot(data = model4.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
                   ),
               size = 0.5
               ) +
-  theme(legend.position = "right") +
-  ggtitle("Model on Scaled Numeric Data")
+  theme(legend.position = "right")
 ```
 
-Given the small sample size, it's risky to add more predictors. However, we'll try just adding the lifetime psych medication indicator. 
+Visualizing relationship with 3D plot
 
-```{r}
-lmer.5 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_dx + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
-summary(lmer.5)
-Anova(lmer.5)
+```{r, warning=FALSE}
+# # Compute the linear regression (z = ax + by + d)
+# fit.3d <- lm(final.bin_scaled$delta_sops ~ final.bin_scaled$sips_diff_days + final.bin_scaled$R_Thalamus_mean)
+# # predict values on regular xy grid
+# grid.lines = 26
+# x.pred <- seq(min(final.bin_scaled$sips_diff_days), max(final.bin_scaled$sips_diff_days), length.out = grid.lines)
+# y.pred <- seq(min(final.bin_scaled$R_Thalamus_mean), max(final.bin_scaled$R_Thalamus_mean), length.out = grid.lines)
+# xy <- expand.grid( x = x.pred, y = y.pred)
+# z.pred <- matrix(predict(fit.3d, newdata = xy), 
+#                  nrow = grid.lines, ncol = grid.lines)
+# # fitted points for droplines to surface
+# fitpoints <- predict(fit.3d)
+
+scatter3D(final.end_scaled$sips_diff_days, final.end_scaled$R_Thalamus_mean, final.end_scaled$delta_sops, colvar = final.end_scaled$R_Thalamus_mean, bty = "b2", col = NULL, add = FALSE, theta = 110, phi = 20, main = "", xlab = "Time", ylab ="Thalamic CEST", zlab = "Change in SOPS P")
+plotrgl()
 ```
 
-Even though `psych.rx_life` is very predictive of `sops_p` at a given timepoint, is not so much a predictor of interest (since if you know whether someone is taking psychiatric meds you probably also know their positive sxs); it's included because we want to control for it when testing the significance of the other predictors (because meds may affect glucest contrast and/or sops positive score).
-
-Switching out baseline sops positive (`base_sops_p`) for `base_dx` results in a singular fit.
+Given the small sample size, it's risky to add more predictors. However, we'll try just adding the indicator for lifetime psych medication at time of scan.
 
 ```{r}
-lmer.6 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
-# summary(lmer.6)
-# Anova(lmer.6)
+fit.delta.5 <- lmer(delta_sops ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p + sips_diff_days + base_rx + (1 |BBLID), REML = T, data = final.end_scaled )
+summary(fit.delta.5)
+#Anova(fit.delta.5)
 ```
 
 Finally, I'll fit a full model without CEST data for comparison.
 
 ```{r}
-lmer.7 <- lmer(sops_p ~ Sex_1M + age_scan + base_dx + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
-summary(lmer.7)
-Anova(lmer.7)
+fit.delta.6 <- lmer(delta_sops ~ Sex_1M + age_scan + base_sops_p + sips_diff_days + base_rx + (1 |BBLID), REML = T, data = final.end_scaled)
+summary(fit.delta.6)
+#Anova(fit.delta.6)
 ```
 
 Using anova to compare nested model fits:
 
 ```{r}
-anova(lmer.4, lmer.5, test="Chisq")
-
-anova(lmer.5, lmer.7, test="Chisq")
+anova(fit.delta.5, fit.delta.6, test="Chisq")
 ```
 
-`lmer.5` (adding `psych.rx_life`) unsurprisingly significantly improved the fit significantly. There was no significant difference between `lmer.5` and `lmer.7`, suggesting that adding thalamic CEST values do not improve the model. 
+There is no significant difference between `fit.delta.5` and `fit.delta.6`, suggesting that adding thalamic CEST values do not improve the model. 
 
 "The residual variance estimate can be thought of as the within groups variance and each random effect variance estimate can be thought of as a between groups estimate"
 
 Diagnostics
 ```{r}
 #linearity - plotting residuals
-plot(lmer.5)
+plot(fit.delta.6)
 #normality - plotting quantiles
-qqnorm(residuals(lmer.5))
+qqnorm(residuals(fit.delta.6))
 ```
 
-Heteroscedastic - model fits less well at higher (and more important) sops_p scores
+Heteroscedastic - model fits less well at higher (and more important) sops_p score changes; adding `base_dx` to try to improve fit.
+
+```{r}
+fit.delta.7 <- lmer(delta_sops ~ Sex_1M + age_scan + base_sops_p + sips_diff_days + base_rx + base_dx + (1|BBLID), REML = T, data = final.end_scaled)
+summary(fit.delta.7)
+#Anova(fit.delta.7)
+
+anova(fit.delta.6, fit.delta.7, test="Chisq")
+```
+
+Baseline dx does not appear to add to the fit of the model. 
 
 nonrandom slopes on endpoint data - 
 
@@ -1008,7 +1035,7 @@ Anova(lmer.end)
 nonrandom slopes on change
 
 ```{r}
-lmer.change <- lmer(delta_sops ~ sips_diff_days + R_Thalamus_mean + age_sops + scanner + Sex_1M + base_sops_p + base_rx + (1|BBLID), REML = T, data = final.end_scaled)
+lmer.change <- lmer(delta_sops ~ sips_diff_days + R_Thalamus_mean + age_sops + scanner + Sex_1M + base_sops_p + base_rx + (1|BBLID), REML = T, data = final.bin_scaled)
 
 summary(lmer.change)
 Anova(lmer.change)
@@ -1183,6 +1210,159 @@ summary(reg3)
 
 ```
 
+## Mixed Effects Models - Baseline Included
+
+Using scaled data so model will converge more readily. Building models with predictors chosen based on a priori subject knowledge and relationships shown above, getting sequentially more complex to avoid overfitting. Building models inclusive of baseline scores will assess for relationships between thalamic cest and SOPS-P, allowing that relationship to vary linearly over time (random slope for `sips_diff_days`). However,  because the primary interest of the study is *change* in SOPS P sxs, we want baseline SOPS to be a predictor of final SOPS (or change in SOPS) not predicted necessarily. Basically, i'm not hypothesizing that the relationship between sops and cest will vary linearly over time by individual (though thats' maybe interesting?); more directly i want to know if later SOPS are related to CEST. 
+
+```{r}
+lmer.1 <- lmer(sops_p ~ sips_diff_days + (1|BBLID), REML = T, data = final.df_scaled)
+summary(lmer.1)
+
+#plot
+model_coefs <- coef(lmer.1)$BBLID %>% 
+  rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+  rownames_to_column("BBLID")
+
+model1.data <- left_join(final.df_scaled, model_coefs, by="BBLID")
+
+ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
+  geom_point(na.rm = T, aes(col = BBLID)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = BBLID
+                  ),
+              size = 0.5
+              ) +
+  theme(legend.position = "right")
+```
+
+
+```{r}
+lmer.2 <- lmer(sops_p ~ base_dx + (1 + sips_diff_yrs|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.2)
+
+#plot
+model_coefs2 <- coef(lmer.2)$BBLID %>% 
+  rename(Intercept = `(Intercept)`, Slope = sips_diff_yrs) %>% 
+  rownames_to_column("BBLID")
+model2.data <- left_join(final.df_scaled, model_coefs2, by="BBLID")
+
+ggplot(data = model2.data, mapping = aes(x = sips_diff_yrs, y = sops_p)) +
+  geom_point(na.rm = T, aes(col = BBLID)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = BBLID
+                  ),
+              size = 0.5
+              ) +
+  theme(legend.position = "right") +
+  ggtitle("Model on Scaled Numeric Data")
+```
+
+
+Simple random slopes model `lmer(sops_p ~ (1 + sips_diff_yrs|BBLID), REML = T, data = final.df_scaled)` singular with correlation of -1, because ppts with higher intercepts have more negative slopes (i.e. worse baseline sxs -> generally more improvement). Adding `base_dx` term resolves this singularity (i.e. shakes up this colinearity) by (it seems) accounting for intercept values outside of the random effect of `BBLID`.
+
+Adding standard demographics (sex and age at scan)
+
+```{r}
+lmer.3 <- lmer(sops_p ~ Sex_1M + age_scan + base_dx + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.3)
+#Anova(lmer.3)
+
+#plot
+
+model_coefs3 <- coef(lmer.3)$BBLID %>% 
+  rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+  rownames_to_column("BBLID")
+
+model3.data <- left_join(final.df_scaled, model_coefs3, by="BBLID")
+
+ggplot(data = model3.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
+  geom_point(na.rm = T, aes(col = BBLID)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = BBLID
+                  ),
+              size = 0.5
+              ) +
+  theme(legend.position = "right") +
+  ggtitle("Model on Scaled Numeric Data")
+```
+
+Adding in CEST values along with scanner, since Thalamic glucest contrast varies significantly between scanner.
+
+```{r}
+lmer.4 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_dx + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.4)
+Anova(lmer.4)
+
+
+#plot
+model_coefs4 <- coef(lmer.4)$BBLID %>% 
+  rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
+  rownames_to_column("BBLID")
+model4.data <- left_join(final.df_scaled, model_coefs4, by="BBLID")
+ggplot(data = model4.data, mapping = aes(x = sips_diff_days, y = sops_p)) +
+  geom_point(na.rm = T, aes(col = BBLID)) +
+  geom_abline(aes(intercept = Intercept, 
+                  slope = Slope,
+                  colour = BBLID
+                  ),
+              size = 0.5
+              ) +
+  theme(legend.position = "right") +
+  ggtitle("Model on Scaled Numeric Data")
+```
+
+Given the small sample size, it's risky to add more predictors. However, we'll try just adding the lifetime psych medication indicator. 
+
+```{r}
+lmer.5 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_dx + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.5)
+Anova(lmer.5)
+```
+
+Even though `psych.rx_life` is very predictive of `sops_p` at a given timepoint, is not so much a predictor of interest (since if you know whether someone is taking psychiatric meds you probably also know their positive sxs); it's included because we want to control for it when testing the significance of the other predictors (because meds may affect glucest contrast and/or sops positive score).
+
+Switching out baseline sops positive (`base_sops_p`) for `base_dx` results in a singular fit.
+
+```{r}
+lmer.6 <- lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+# summary(lmer.6)
+# Anova(lmer.6)
+```
+
+Finally, I'll fit a full model without CEST data for comparison.
+
+```{r}
+lmer.7 <- lmer(sops_p ~ Sex_1M + age_scan + base_dx + psych.rx_life + (1 + sips_diff_days|BBLID), REML = T, data = final.df_scaled )
+summary(lmer.7)
+Anova(lmer.7)
+```
+
+Using anova to compare nested model fits:
+
+```{r}
+anova(lmer.4, lmer.5, test="Chisq")
+
+anova(lmer.5, lmer.7, test="Chisq")
+```
+
+`lmer.5` (adding `psych.rx_life`) unsurprisingly significantly improved the fit significantly. There was no significant difference between `lmer.5` and `lmer.7`, suggesting that adding thalamic CEST values do not improve the model. 
+
+"The residual variance estimate can be thought of as the within groups variance and each random effect variance estimate can be thought of as a between groups estimate"
+
+Diagnostics
+```{r}
+#linearity - plotting residuals
+plot(lmer.5)
+#normality - plotting quantiles
+qqnorm(residuals(lmer.5))
+```
+
+Heteroscedastic - model fits less well at higher (and more important) sops_p scores
+
+
 ## Calculating % Change
 Removed because it resulted in irritating and uninterpretable inf values.
 
@@ -1215,8 +1395,8 @@ meds_baseline <- sops_change_meds %>%
   group_by(observation) %>%
   slice_head() %>% #keep only closest dx
   ungroup() %>%
-  select(observation, meds_7t_diff, DOCOLLECT | contains("MEDICINE_") | contains("NOTES_") | contains("IS_CURRENT_")) %>% #drop non-med stuff
-  select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
+ dplyr::select(observation, meds_7t_diff, DOCOLLECT | contains("MEDICINE_") | contains("NOTES_") | contains("IS_CURRENT_")) %>% #drop non-med stuff
+ dplyr::select_if(~!all(is.na(.))) %>% #drop any col that's totally empty
   rename_with(.cols = 3:ncol(.), function(x){paste0("base.", x)}) #add prefix
 #go back and filter down to endpoint meds
 meds_end <- sops_change_meds %>%
@@ -1224,8 +1404,8 @@ meds_end <- sops_change_meds %>%
   group_by(observation) %>%
   slice_head() %>% #keep only closest dx
   ungroup() %>%
-  select(observation, meds_sops_diff, DOCOLLECT | contains("MEDICINE_") | contains("NOTES_") | contains("IS_CURRENT_")) %>% #drop non-med stuff
-  select_if(~!all(is.na(.)))
+ dplyr::select(observation, meds_sops_diff, DOCOLLECT | contains("MEDICINE_") | contains("NOTES_") | contains("IS_CURRENT_")) %>% #drop non-med stuff
+ dplyr::select_if(~!all(is.na(.)))
 
 #plots to see the range of closest med info
 sops.med.p <- meds_end %>%
@@ -1268,7 +1448,7 @@ Ok, now how to summarize all this medication info into one cohesive value
 ```{r, eval=FALSE}
 #see how often each med is reported
 sops_change_meds.final %>%
-  select(contains("MEDICINE")) %>%
+ dplyr::select(contains("MEDICINE")) %>%
   unlist() %>%
   table()
 ```
@@ -1314,8 +1494,8 @@ skim(scan_date_med_current)
 scan_meds_current_wide <- pivot_wider(scan_date_med_current, id_cols=observation, names_from = base.count, values_from=c(4:12))
 #just keep essential cols
 scan.meds.current_wide.filt <- scan_meds_current_wide %>%
-  select(observation | contains("MEDICINE_") | contains("NOTES_")) %>%
-  select_if(~!all(is.na(.))) #drop any col that's totally empty
+ dplyr::select(observation | contains("MEDICINE_") | contains("NOTES_")) %>%
+ dplyr::select_if(~!all(is.na(.))) #drop any col that's totally empty
 ```
 
 In the meantime I'll try to find meds current to endpoint SOPs.
@@ -1337,8 +1517,8 @@ skim(end_date_med_current)
 end_meds_current_wide <- pivot_wider(end_date_med_current, id_cols=observation, names_from = count, values_from=c(4:12))
 #just keep essential cols
 end.meds.current_wide.filt <- end_meds_current_wide %>%
-  select(observation | contains("MEDICINE_") | contains("NOTES_")) %>%
-  select_if(~!all(is.na(.))) #drop any col that's totally empty
+ dplyr::select(observation | contains("MEDICINE_") | contains("NOTES_")) %>%
+ dplyr::select_if(~!all(is.na(.))) #drop any col that's totally empty
 ```
 
 This seems to be working, lets try merging baseline and endpoint meds and see what we have
@@ -1375,7 +1555,7 @@ sops_change <- scanlist_clean %>%
          slope.gafc = abs.delta.gafc/delta.sops_time,
          observation = paste(bblid_scan, scan.time)) %>% #add unique ID for each BBLID-scan-endpoint#
   ungroup() %>%
-  select(!c(sops.item.list, sops_p, sops_n, sops_d, sops_g, sops_tot)) %>% #drop raw scores
+ dplyr::select(!c(sops.item.list, sops_p, sops_n, sops_d, sops_g, sops_tot)) %>% #drop raw scores
   filter(!(scan.time=="base.1"))
 
 #double check to make sure no endpoint scans come before baseline scans 
