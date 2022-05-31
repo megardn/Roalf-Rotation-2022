@@ -14,12 +14,10 @@ pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, dat
 
 
 # Compile Scan Lists
-*from `scan_list_comp.Rmd`*
-Compile lists of all GluCEST scans.
 
-**To DO:**
-- confirm that newer scan dates = Terra 
-- pull scan IDs
+*Code originally from `scan_list_comp.Rmd`*
+
+Compile lists of all GluCEST scans.
 
 ## Load & Clean Lists
 
@@ -588,7 +586,7 @@ final.end_scaled <- final.end %>% mutate_if(is.numeric, scale)
 
 Plotting correlations 
 
-```{r fig.width=15, fig.height=15}
+```{r fig.width=20, fig.height=20}
 skim(final.df)
 
 final.df %>% 
@@ -711,15 +709,6 @@ ggplot(final.df) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
   ggtitle("SOPS Total Score vs Axis 1 Dx")
 
-# final.df %>% 
-#   group_by(BBLID) %>%
-#   sample_n(1) %>% #randomdplyr::selection
-#   ggplot(aes(x = diagnosis, y = GAF_C)) +
-#   geom_point(aes(color=psych.rx_life), show.legend = TRUE) +
-#   geom_jitter(width = 0.25) +
-#   theme(axis.text.x = element_text(angle = 45, hjust=1)) +
-#   ggtitle("GAF vs Axis 1 Dx")
-
 final.df %>% 
   group_by(BBLID) %>%
   ggplot(aes(x = diagnosis, y = sops_p, color=psych.rx_life)) +
@@ -791,14 +780,6 @@ ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=base_dx)) +
 All groups appear to have relatively stable SOPS-P scores when averaged across individuals. But can CEST values predict and individual's change?
 
 ```{r}
-# ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=BBLID)) +
-#   geom_point() +
-#   xlab("Time from Scan") +
-#   ylab("SOPS Positive Score") + 
-#   ggtitle("SOPS-P Progression by for Each Subject") + 
-#   geom_smooth(method="lm",se = FALSE) +
-#   theme_bw()
-
 ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=BBLID)) +
   geom_line() +
   xlab("Time from Scan") +
@@ -889,23 +870,6 @@ Adding baseline SOPS P to model
 ```{r}
 fit.delta.2 <- lmer(delta_sops ~ sips_diff_days + base_sops_p + (1|BBLID), REML = T, data = final.end_scaled)
 summary(fit.delta.2)
-
-# #plot
-# delta2_coefs <- coef(fit.delta.2)$BBLID %>% 
-#   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
-#   rownames_to_column("BBLID")
-# 
-# model.end.2.data <- left_join(final.bin_scaled, delta2_coefs, by="BBLID")
-# 
-# ggplot(data = model.end.2.data, mapping = aes(x = sips_diff_days, y = delta_sops)) +
-#   geom_point(na.rm = T, aes(col = BBLID)) +
-#   geom_abline(aes(intercept = Intercept, 
-#                   slope = Slope,
-#                   colour = BBLID
-#                   ),
-#               size = 0.5
-#               ) +
-#   theme(legend.position = "right")
 ```
 
 Adding demographics
@@ -914,23 +878,6 @@ Adding demographics
 fit.delta.3 <- lmer(delta_sops ~ Sex_1M + age_scan + base_sops_p + sips_diff_days + (1 |BBLID), REML = T, data = final.end_scaled)
 summary(fit.delta.3)
 #Anova(fit.delta.3)
-
-# #plot
-# delta3_coefs <- coef(fit.delta.3)$BBLID %>% 
-#   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
-#   rownames_to_column("BBLID")
-# 
-# model.end.3.data <- left_join(final.bin_scaled, delta3_coefs, by="BBLID")
-# 
-# ggplot(data = model.end.3.data, mapping = aes(x = sips_diff_days, y = delta_sops)) +
-#   geom_point(na.rm = T, aes(col = BBLID)) +
-#   geom_abline(aes(intercept = Intercept, 
-#                   slope = Slope,
-#                   colour = BBLID
-#                   ),
-#               size = 0.5
-#               ) +
-#   theme(legend.position = "right")
 ```
 
 Adding in CEST values along with scanner, since Thalamic glucest contrast varies significantly between scanner.
@@ -961,18 +908,6 @@ ggplot(data = model.end.4.data, mapping = aes(x = sips_diff_days, y = delta_sops
 Visualizing relationship with 3D plot
 
 ```{r, warning=FALSE}
-# # Compute the linear regression (z = ax + by + d)
-# fit.3d <- lm(final.bin_scaled$delta_sops ~ final.bin_scaled$sips_diff_days + final.bin_scaled$R_Thalamus_mean)
-# # predict values on regular xy grid
-# grid.lines = 26
-# x.pred <- seq(min(final.bin_scaled$sips_diff_days), max(final.bin_scaled$sips_diff_days), length.out = grid.lines)
-# y.pred <- seq(min(final.bin_scaled$R_Thalamus_mean), max(final.bin_scaled$R_Thalamus_mean), length.out = grid.lines)
-# xy <- expand.grid( x = x.pred, y = y.pred)
-# z.pred <- matrix(predict(fit.3d, newdata = xy), 
-#                  nrow = grid.lines, ncol = grid.lines)
-# # fitted points for droplines to surface
-# fitpoints <- predict(fit.3d)
-
 scatter3D(final.end_scaled$sips_diff_days, final.end_scaled$R_Thalamus_mean, final.end_scaled$delta_sops, colvar = final.end_scaled$R_Thalamus_mean, bty = "b2", col = NULL, add = FALSE, theta = 110, phi = 20, main = "", xlab = "Time", ylab ="Thalamic CEST", zlab = "Change in SOPS P")
 plotrgl()
 ```
@@ -1049,6 +984,17 @@ Anova(fit.stat.pt)
 ```
 
 Thalamic glutamate levels do not differ between remitters and progressors in our sample, whether or not controls are included in the sample.
+
+```{r}
+#controlling for clinical factors
+fit.stat2 <- glm(sops_worse ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p, data=end.df, family=binomial(logit))
+Anova(fit.stat2)
+
+#clinical factors only
+fit.stat3 <- glm(sops_worse ~ Sex_1M + age_scan + base_sops_p + base_rx + base_rx, data=end.df, family=binomial(logit))
+Anova(fit.stat3)
+summary(fit.stat3)
+```
 
 Running partial correlations (as in Egerton et al) on baseline glutamate vs SOPS P ("Relationships between baseline glutamate concentrations and absolute change in attenuated psychotic symptoms or GAF score over time were calculated using partial correlation  coefficients,  co-varying  for  baselines cores to control for regression to the mean")
 
