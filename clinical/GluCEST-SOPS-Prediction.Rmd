@@ -1023,61 +1023,6 @@ anova(fit.delta.6, fit.delta.7, test="Chisq")
 
 Baseline dx does not appear to add to the fit of the model. 
 
-nonrandom slopes on endpoint data - 
-
-```{r}
-lmer.end <-lmer(sops_p ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_dx + psych.rx_life + (1|BBLID), REML = T, data = final.end_scaled)
-
-summary(lmer.end)
-Anova(lmer.end)
-```
-
-nonrandom slopes on change
-
-```{r}
-lmer.change <- lmer(delta_sops ~ sips_diff_days + R_Thalamus_mean + age_sops + scanner + Sex_1M + base_sops_p + base_rx + (1|BBLID), REML = T, data = final.bin_scaled)
-
-summary(lmer.change)
-Anova(lmer.change)
-```
-
-
-Binarized improvement (delta_sops < 0) vs worsening of symptoms (delta_sops > 0) - logistic regression
-
-```{r}
-final.end_scaled <- final.end_scaled %>%
-  mutate(sops_worse = case_when(sops_cat == "remit" ~ 0,
-                                sops_cat == "stable" ~ 0,
-                                sops_cat == "progress" ~ 1))
-#check if binarized correctly
-#table(final.df_scaled_end$sops_cat, final.df_scaled_end$sops_worse)
-
-fit.thal <- lmer(R_Thalamus_mean ~ scanner + sops_worse + (1|BBLID), final.end_scaled)
-summary(fit.logit)
-Anova(fit.logit)
-summary(rePCA(fit.logit))
-
-#try prediction
-fit.logit.predict <- predict(fit.logit, final.end_scaled, type="response") 
-
-# #plot
-# model_coefs <- coef(fit.logit)$BBLID %>% 
-#   rename(Intercept = `(Intercept)`, Slope = sips_diff_days) %>% 
-#   rownames_to_column("BBLID")
-# 
-# model1.data <- left_join(final.end, model_coefs, by="BBLID")
-# 
-# ggplot(data = model1.data, mapping = aes(x = sips_diff_days, y = sops_bin)) +
-#   geom_point(na.rm = T, aes(col = BBLID)) +
-#   geom_abline(aes(intercept = Intercept, 
-#                   slope = Slope,
-#                   colour = BBLID
-#                   ),
-#               size = 0.5
-#               ) +
-#   theme(legend.position = "right")
-```
-
 ## Progressors vs Remitters
 
 Classifying each subject as progression vs remission based on whether trajectory from baseline to final endpoint SOPS-P is + or -, looking for between-group CEST differences (similar to Allen et al Fig 3A & binary logistic regression run in Egerton).
