@@ -652,13 +652,13 @@ demo <- final.df %>% filter(scan.time=="base.1") %>%
 demo.base <- atable(final.base, 
          target_cols=c("sex", "age_scan", "Race", "Ethnicity", "base_dx", "TYPE", "base_sops_p", "base_gafc", "psych.rx_life"),
          group_col="scanner",
-         format_to="HTML")
+         format_to="Console")
 demo.base
 
 tpt.table <- atable(final.df,
                     target_cols=c("scan.time", "age_sops", "sips_diff_yrs", "diagnosis", "sops_p", "sops_n", "sops_d", "sops_g", "GAF_C", "psych.rx_life"),
                     group_col="scanner",
-                    format_to="HTML")
+                    format_to="Console")
 tpt.table
 ```
 
@@ -672,7 +672,8 @@ final.df %>%dplyr::select(scanner | contains("Thalamus")) %>% ggpairs(aes(color=
 cest.table <- atable(final.base,
        target_cols=c("R_Thalamus_mean", "R_Thalamus_numvoxels", "gm.R_Thalamus_mean", "gm.R_Thalamus_numvoxels"),
        group_col="scanner",
-       format_to = "HTML")
+       format_to = "Console")
+cest.table
 ```
 
 ### Significance Testing
