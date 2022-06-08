@@ -9,7 +9,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 if(!require('pacman')) {
   install.packages('pacman')
 }
-pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff, GGally, atable, glmnet, ppcor, plot3D, plot3Drgl)
+pacman::p_load(tidyverse, ggplot2, ggpubr, ggrepel, skimr, lubridate, tidyr, data.table, car, ggpubr, corrplot, lme4, lmerTest, report, DescTools, daff, GGally, atable, glmnet, ppcor, plot3D, plot3Drgl, MetabolomicsBasics, performance, rsq)
 ```
 
 
@@ -621,6 +621,14 @@ p.age_sops <- final.df %>%
 age_plot <- ggarrange(p.age_scan, p.age_sops, common.legend = F, legend = "bottom", ncol = 2)
 annotate_figure(p=age_plot, top = text_grob("Age of Participants at Scan and Clinical Assessments", 
                                color = "black", face = "bold", size = 14))
+
+full.demo.base <- atable(final.base, 
+         target_cols=c("sex", "age_scan", "Race", "Ethnicity", "base_dx", "TYPE", "base_sops_p", "base_gafc", "psych.rx_life"),
+         format_to="Console")
+
+full.tpt.table <- atable(final.df,
+                    target_cols=c("scan.time", "age_sops", "sips_diff_yrs", "diagnosis", "sops_p", "sops_n", "sops_d", "sops_g", "GAF_C", "psych.rx_life"),
+                    format_to="Console")
 ```
 
 Visualize spread of followup timepoints for possible future binning:
@@ -781,29 +789,49 @@ ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=base_dx)) +
   theme_bw()
 ```
 
+**add table grouping `delta_sops` by diagnosis**
+
+```{r}
+
+```
+
 All groups appear to have relatively stable SOPS-P scores when averaged across individuals. But can CEST values predict and individual's change?
 
 ```{r}
+cc <- scales::seq_gradient_pal("#6afec4", "#202236", "Lab")(seq(0,1,length.out=21))
+
 ggplot(final.df, aes(x=sips_diff_days, y=sops_p, color=BBLID)) +
   geom_line() +
   xlab("Time from Scan") +
   ylab("SOPS Positive Score") + 
-  ggtitle("SOPS-P Progression by for Each Subject") + 
-  geom_smooth(method="lm",se = FALSE) +
-  theme_bw()
+  ggtitle("SOPS-P Progression from Scan by Subject") + 
+  theme_bw() +
+  scale_colour_manual(values=cc)
 ```
 
 ```{r}
+final.end %>% group_by(base_dx) %>%
+   summarize(range = max(delta_sops) - min(delta_sops),
+            median = median(delta_sops),
+            mean = mean(delta_sops),
+            sd = sd(delta_sops))
+
+cc2 <- scales::seq_gradient_pal("#6afec4", "#f67c65", "Lab")(seq(0,1,length.out=4))
+
 #plot of change by dx
-final.end_scaled %>%
+final.end %>%
   ggplot() + 
-  geom_histogram(aes(x = delta_sops, fill=base_dx, color=base_dx), position="dodge", alpha=0.5) +
-  ggtitle("Change in SOPS Positive Score by Baseline Diagnosis")
+  geom_histogram(aes(x = delta_sops, fill=base_dx), position="identity", alpha=0.75) +
+  facet_wrap(~base_dx) +
+  ggtitle("Change in SOPS Positive Score by Baseline Diagnosis") +
+  scale_fill_manual(values=cc2)
 ```
 
 Plot change in sops positive by glutamate (similar to egerton et al fig 2)
 
 ```{r}
+cc3 <- scales::seq_gradient_pal("#6afec4", "#202236", "Lab")(seq(0,1,length.out=4))
+
 final.end_scaled %>%
   filter(base_dx=="pro"| base_dx=="psych")
 ggplot(data = final.end_scaled, mapping = aes(x = R_Thalamus_mean, y = delta_sops)) +
@@ -811,10 +839,15 @@ ggplot(data = final.end_scaled, mapping = aes(x = R_Thalamus_mean, y = delta_sop
   geom_smooth(method = "lm", na.rm=T, col = "black", se=T) +
   theme(legend.position = "right") +
   labs(title="Thalamic Glutamate by Change in SOPS Positive \n Among Prodrome and Psychosis Pts (Scaled)",
-        x ="Thalamic Glutamate Contrast", y = "Change in SOPS Positive", color="Endpoint Diagnosis")
+        x ="Thalamic Glutamate Contrast", y = "Change in SOPS Positive", color="Endpoint Diagnosis") +
+  scale_color_manual(values=cc3)
 ```
 
-The plot is vaguely suggestive of that in Egerton et al, but clearly not significant. However, these are scaled raw values while their plot reported "Baseline thalamic glutamate level, adjusted for baseline attenuated positive symptom score".
+The plot is vaguely suggestive of that in Egerton et al, but clearly not significant. However, these are scaled raw values while their plot reported "Baseline thalamic glutamate level, adjusted for baseline attenuated positive symptom score". Attempting adjustment using suggested method [here](https://www.researchgate.net/post/How_to_interpret_adjusted_variables_in_linear_regression/5b03defbd6afb56c4071bcad/citation/download).
+
+```{r, eval=FALSE}
+
+```
 
 # Modeling
 
@@ -912,7 +945,7 @@ ggplot(data = model.end.4.data, mapping = aes(x = sips_diff_days, y = delta_sops
 Visualizing relationship with 3D plot
 
 ```{r, warning=FALSE}
-scatter3D(final.end_scaled$sips_diff_days, final.end_scaled$R_Thalamus_mean, final.end_scaled$delta_sops, colvar = final.end_scaled$R_Thalamus_mean, bty = "b2", col = NULL, add = FALSE, theta = 110, phi = 20, main = "", xlab = "Time", ylab ="Thalamic CEST", zlab = "Change in SOPS P")
+scatter3D(final.end_scaled$sips_diff_days, final.end_scaled$R_Thalamus_mean, final.end_scaled$delta_sops, colvar = final.end_scaled$delta_sops, bty = "b2", col = NULL, add = FALSE, theta = 110, phi = 20, main = "", xlab = "Time", ylab ="Thalamic CEST", zlab = "Change in SOPS P")
 plotrgl()
 ```
 
@@ -922,7 +955,12 @@ Given the small sample size, it's risky to add more predictors. However, we'll t
 fit.delta.5 <- lmer(delta_sops ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p + sips_diff_days + base_rx + (1 |BBLID), REML = T, data = final.end_scaled )
 summary(fit.delta.5)
 #Anova(fit.delta.5)
+r2_nakagawa(fit.delta.5)
 ```
+
+"The residual variance estimate can be thought of as the within groups variance and each random effect variance estimate can be thought of as a between groups estimate"
+
+"Marginal and conditional r-squared values for mixed models are calculated based on Nakagawa et al. 2017... The marginal r-squared considers only the variance of the fixed effects, while the conditional rsquared takes both the fixed and random effects into account. The random effect variances are actually the mean random effect variances, thus the r-squared value is also appropriate for mixed models with random slopes or nested random effects (see Johnson 2014)."
 
 Finally, I'll fit a full model without CEST data for comparison.
 
@@ -930,6 +968,7 @@ Finally, I'll fit a full model without CEST data for comparison.
 fit.delta.6 <- lmer(delta_sops ~ Sex_1M + age_scan + base_sops_p + sips_diff_days + base_rx + (1 |BBLID), REML = T, data = final.end_scaled)
 summary(fit.delta.6)
 #Anova(fit.delta.6)
+r2_nakagawa(fit.delta.6)
 ```
 
 Using anova to compare nested model fits:
@@ -940,10 +979,69 @@ anova(fit.delta.5, fit.delta.6, test="Chisq")
 
 There is no significant difference between `fit.delta.5` and `fit.delta.6`, suggesting that adding thalamic CEST values do not improve the model. 
 
-"The residual variance estimate can be thought of as the within groups variance and each random effect variance estimate can be thought of as a between groups estimate"
+Simple lm for visualization:
+
+```{r}
+lm.delta.5 <- lm(delta_sops ~ R_Thalamus_mean + scanner + Sex_1M + age_scan + base_sops_p + sips_diff_days + base_rx, final.end)
+Anova(lm.delta.5)
+summary(lm.delta.5)
+#avPlots(lm.delta.5, terms=~.-scanner-Sex_1M-age_scan, col.lines="#f67c65", id=FALSE)
+avPlots(lm.delta.5, terms="R_Thalamus_mean", col.lines="#f67c65", id=FALSE, ylab="Change in SOPS-P | Others", xlab="Thalamic CEST | Scanner, Sex, Age, Time, Baseline Psych Rx, Baseline SOPS-P", main="Partial Regression of Thalamic GluCEST vs Change in SOPS-P")
+
+
+pcor.df2 <- end.df %>%
+  mutate(scan.num = case_when(scanner == "Terra" ~ 0,
+                                scanner == "ONM" ~ 1),
+         base_rx = as.integer(base_rx)) %>% #must be numeric for pcor
+  dplyr::select("delta_sops", "R_Thalamus_mean", "scan.num", "Sex_1M", "age_scan", "base_sops_p", "sips_diff_days", "base_rx")
+pcor2 <- as.data.frame(ppcor::pcor(pcor.df2)$estimate) %>%
+  dplyr::select(delta_sops) %>%
+  mutate(var=as.factor(rownames(.))) %>%
+  filter(var != "delta_sops")
+
+pcor2$var <- recode_factor(pcor2$var,"base_sops_p" = "Baseline SOPS-P",
+                           "scan.num" = "ONM Scanner",
+                           "R_Thalamus_mean" = "Thalamic GluCEST",
+                           "age_scan" = "Age at Scan",
+                           "Sex_1M" = "Sex Male",
+                           "sips_diff_days" = "Time (Days)",
+                           "base_rx" = "Psych Rx")
+pcor2$var <- factor(pcor2$var,                                    # Factor levels in decreasing order
+                  levels = pcor2$var[order(pcor2$delta_sops, decreasing = FALSE)])
+
+table(pcor2$var)
+
+pcor2 %>%
+  ggplot(aes(x=var, y=delta_sops)) + 
+  geom_bar(stat = "identity", fill="#202236") +
+  theme_bw() +
+  xlab("Predictor") +
+  ylab("R Partial") + 
+  ggtitle("Partial Correlation of Predictors with Change in SOPS-P") +
+  coord_flip()
+
+#avPlots(lm.delta.5, col.lines="#f67c65", id=FALSE, main="Partial Regression of Thalamic GluCEST vs Change in SOPS-P", grid=TRUE, ylab="Change in SOPS-P | Others", xlab="Baseline SOPS-P | Thalamic CEST, Scanner, Sex, Age, Time, Baseline Psych Rx")
+
+# lm.delta.6 <- lm(delta_sops ~ Sex_1M + age_scan + base_sops_p + sips_diff_days + base_rx, final.end)
+# Anova(lm.delta.6)
+#avPlots(lm.delta.6, terms=~.-Sex_1M-age_scan, col.lines="#6afec4", id=FALSE, main="Added-Variable Plots: Reduced Model")
+```
 
 Diagnostics
 ```{r}
+final.end_scaled.pred <- final.end_scaled
+
+final.end_scaled.pred$predicted <- predict(fit.delta.6)
+final.end_scaled.pred$residuals <- residuals(fit.delta.6)
+head(final.end_scaled.pred)
+
+ggplot(final.end_scaled.pred, aes(x = R_Thalamus_mean, y = delta_sops)) +
+  geom_segment(aes(xend = R_Thalamus_mean, yend = predicted), alpha = .2) +
+  geom_point(aes(color = residuals)) + #filled point = actual value
+  scale_color_gradient2(low = "blue", mid = "white", high = "red") + #red=actual > predicted
+  geom_point(aes(y = predicted), shape = 1) + #predicted value
+  theme_bw()
+
 #linearity - plotting residuals
 plot(fit.delta.6)
 #normality - plotting quantiles
@@ -969,13 +1067,16 @@ Classifying each subject as progression vs remission based on whether trajectory
 ```{r}
 #first subset df to final tp for each subject
 end.df <- final.df %>%
+  arrange(DOSIPS) %>%
   group_by(BBLID) %>%
   slice_tail() %>%
   ungroup() %>%
   mutate(sops_worse = case_when(sops_cat == "remit" ~ 0,
                                 sops_cat == "stable" ~ 0,
-                                sops_cat == "progress" ~ 1))
-
+                                sops_cat == "progress" ~ 1),
+         sops_worse_cat = case_when(sops_cat == "remit" ~ "Stable & Remitting",
+                                sops_cat == "stable" ~ "Stable & Remitting",
+                                sops_cat == "progress" ~ "Worsening"))
 table(end.df$sops_worse) #pretty even split
 fit.stat <- glm(sops_worse ~ R_Thalamus_mean + scanner, data=end.df, family=binomial(logit))
 Anova(fit.stat)
@@ -988,6 +1089,33 @@ Anova(fit.stat.pt)
 ```
 
 Thalamic glutamate levels do not differ between remitters and progressors in our sample, whether or not controls are included in the sample.
+
+```{r}
+fit.stat.roc<- roc(end.df$sops_worse, fit.stat$fitted, plot=T, col="blue")
+fit.stat.roc$auc
+fit.stat.pred <- ifelse(fit.stat$fitted > 1/2, "1", "0") #y hat based on majority rule
+
+#plot predictions
+cc4 <- scales::seq_gradient_pal("#6afec4", "#f67c65", "Lab")(seq(0,1,length.out=2))
+end.df %>%
+  ggplot(aes(x=R_Thalamus_mean, y=as_factor(sops_worse))) +
+  geom_jitter(height = 0.1, aes(color=fit.stat.pred)) +
+  scale_color_manual(values=cc4) +
+  xlab("Thalamic GluCEST Contrast") +
+  ylab("SOPS-P Progression") + 
+  ggtitle("Progression Status by Mean Thalamic GluCEST")
+
+end.df %>%
+  ggplot(aes(x=sops_worse_cat, y=R_Thalamus_mean)) +
+  geom_dotplot(binaxis='y', stackdir='center', aes(fill=as_factor(sops_worse))) +
+  stat_summary(fun.data="mean_sdl", fun.args = list(mult=1), 
+                 geom="crossbar", width=0.5) +
+  scale_fill_manual(values=cc4) +
+  ylab("Thalamic GluCEST Contrast") +
+  xlab("SOPS-P Progression Status") + 
+  ggtitle("Progression Status by Mean Thalamic GluCEST")
+```
+
 
 ```{r}
 #controlling for clinical factors
@@ -1008,7 +1136,7 @@ pcor.df <- end.df %>%
                                 scanner == "ONM" ~ 1)) %>% #must be numeric for pcor
   dplyr::select("base_sops_p", "sops_p", "sips_diff_days", "R_Thalamus_mean", "scan.num")
 
-pcor(pcor.df, method="pearson")
+ppcor::pcor(pcor.df, method="pearson")
 ```
 
 No significant association of thalamic glutamate with final SOPS-P scores is found when controlling for baseline SOPS, time to endpoint, and scanner.
@@ -1017,6 +1145,8 @@ No significant association of thalamic glutamate with final SOPS-P scores is fou
 
 ## References
 +
+
++explanation of (avPlots)[https://stats.stackexchange.com/questions/271314/multiple-regression-avplots-vs-termplot]
 
 ## MEM Resources
 + UCLA [INTRODUCTION TO LINEAR MIXED MODELS](https://stats.oarc.ucla.edu/other/mult-pkg/introduction-to-linear-mixed-models/)
@@ -1423,7 +1553,7 @@ currentmeds <- right_join(scan.meds.current_wide.filt, end.meds.current_wide.fil
 
 Actually very narrow range of meds here, but the `empty entry` notes indicate either no medications or no new medications. Therefore I'll need to look back at participant's former meds
 
-# Wide Data
+## Wide Data
 
 ## Operationalizing Change
 
@@ -1475,3 +1605,6 @@ linear model for fun
 bs.fit <- lm(slope.sops_tot ~ PRODROMAL, data=sops_change)
 Anova(bs.fit)
 ```
+
+
+
